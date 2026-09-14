@@ -1,0 +1,39 @@
+# ─────────────────────────────────────────────
+# 运行产物（作品数据不入库，保证框架可直接复用）
+# ─────────────────────────────────────────────
+sources/*.txt
+works/
+chunks/
+chunks_units/
+chunks_600/
+translations/
+api_out/
+logs/
+reader.html
+_backup*/
+
+# 作品级配置（术语表等）按作品隔离，不入库
+config/*/
+!config/*.example.json
+
+# 凭据绝不能入库
+config/credentials.yaml
+
+# ─────────────────────────────────────────────
+# Python
+# ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# ─────────────────────────────────────────────
+# 编辑器 / 系统
+# ─────────────────────────────────────────────
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+*.tmp
+*.bak
