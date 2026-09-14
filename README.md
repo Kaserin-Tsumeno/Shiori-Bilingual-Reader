@@ -24,7 +24,7 @@
 安装依赖：
 
 ```powershell
-py -3.11 -m pip install pyyaml
+py -3.11 -m pip install -r requirements.txt
 ```
 
 配置 API Key（二选一）：
