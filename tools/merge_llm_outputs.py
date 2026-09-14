@@ -4,6 +4,7 @@ from pathlib import Path as _KitPath
 
 _sys.path.insert(0, str(_KitPath(__file__).resolve().parent))
 import kit_config as cfg
+import reader_builder
 
 import argparse
 import html
@@ -50,67 +51,8 @@ def load_outputs(trans_dir: Path) -> dict[str, dict]:
 
 
 def rebuild_embedded_reader(root: Path, work: dict) -> None:
-    index = json.loads((root / "works" / "index.json").read_text(encoding="utf-8"))
-    css = (root / "assets" / "reader.css").read_text(encoding="utf-8")
-    js = (root / "assets" / "reader.js").read_text(encoding="utf-8")
-    # 数据以 <script type="application/json"> 承载：浏览器只做文本扫描，
-    # 之后由原生 JSON.parse 解析，比 JS 引擎解析同体积对象字面量快数倍。
-    # 转义 "</" 避免序列意外闭合 script 标签。
-    index_json = json.dumps(index, ensure_ascii=False).replace("</", "<\\/")
-    works_json = json.dumps({work["work_id"]: work}, ensure_ascii=False).replace("</", "<\\/")
-    html_doc = f'''<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>双语对照阅读器</title>
-<style>{css}</style>
-</head>
-<body>
-<div id="overlay" class="overlay"></div>
-<div class="app">
-  <aside id="sidebar" class="sidebar">
-    <div class="sidebar-head">
-      <div><div class="brand">双语对照阅读器</div><div class="subtle">中日对照 · 假名注音</div></div>
-      <select id="workSelect" title="作品"></select>
-      <div class="chapter-tools"><input id="sideSearch" type="search" placeholder="筛选章节"></div>
-    </div>
-    <div class="side-tabs">
-      <button type="button" data-tab="chapters" class="active">目录</button>
-      <button type="button" data-tab="bookmarks">书签<span class="tab-count" id="bmCount">0</span></button>
-    </div>
-    <nav id="chapterList" class="chapter-list" aria-label="章节目录"></nav>
-    <nav id="bookmarkList" class="chapter-list" aria-label="书签列表" hidden></nav>
-  </aside>
-  <section class="content">
-    <header class="toolbar">
-      <button id="menuToggle" class="menu-toggle">目录</button>
-      <select id="chapterSelect" title="章节"></select>
-      <div class="segmented" aria-label="对照模式">
-        <button data-layout="side" class="active">左右</button>
-        <button data-layout="stack">上下</button>
-        <button data-layout="ja">日文</button>
-        <button data-layout="zh">中文</button>
-      </div>
-      <label class="toggle"><input id="rubyToggle" type="checkbox" checked> 注音</label>
-      <button id="fontMinus" title="减小字号">A-</button>
-      <button id="fontPlus" title="放大字号">A+</button>
-      <button id="darkToggle" title="切换深浅色">暗</button>
-      <input id="searchBox" type="search" placeholder="搜索日文或中文">
-      <button id="prevChapter">上一章</button>
-      <button id="nextChapter">下一章</button>
-    </header>
-    <aside id="status"></aside>
-    <main id="reader" class="reader layout-side"><div class="loading-hint">正在加载…</div></main>
-  </section>
-</div>
-<script id="reader-index" type="application/json">{index_json}</script>
-<script id="reader-works" type="application/json">{works_json}</script>
-<script>{js}</script>
-</body>
-</html>
-'''
-    (root / "reader.html").write_text(html_doc, encoding="utf-8", newline="\n")
+    """重建 reader.html（模板统一由 reader_builder 提供）。"""
+    reader_builder.write_reader(root, work)
 
 
 def main() -> None:

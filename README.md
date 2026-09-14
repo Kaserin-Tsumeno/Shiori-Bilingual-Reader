@@ -123,6 +123,7 @@ bilingual-novel-kit/
 │  ├─ glossary.example.json  术语表模板  → 复制为 config/<work_id>/glossary.json
 │  └─ terms.example.json     译名统一规则 → 复制为 config/<work_id>/terms.json
 ├─ tools/                    全部脚本（见上表）
+│  └─ reader_builder.py      阅读器 HTML 模板（init_work 与 merge_llm_outputs 共用）
 ├─ assets/
 │  ├─ reader.css             阅读器样式
 │  └─ reader.js              阅读器逻辑（渐进渲染 + 书签 + 进度）

@@ -10,6 +10,7 @@ translations/
 api_out/
 logs/
 reader.html
+prompt_schema.md
 _backup*/
 
 # 作品级配置（术语表等）按作品隔离，不入库

@@ -8,6 +8,8 @@ import shutil
 from datetime import date
 from pathlib import Path
 
+import reader_builder
+
 
 KANJI_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]+")
 CHAPTER_RE = re.compile(r"^第\s*(\d+)\s*話[　\s]*(.*)")
@@ -136,12 +138,12 @@ def write_chunks(work: dict, chunks_dir: Path, chunk_size: int) -> None:
                 )
 
 
-def write_reader(root: Path) -> None:
-    assets = root / "assets"
-    assets.mkdir(parents=True, exist_ok=True)
-    (root / "reader.html").write_text(READER_HTML, encoding="utf-8", newline="\n")
-    (assets / "reader.css").write_text(READER_CSS, encoding="utf-8", newline="\n")
-    (assets / "reader.js").write_text(READER_JS, encoding="utf-8", newline="\n")
+def write_reader(root: Path, work: dict) -> None:
+    """生成阅读器（数据内嵌单文件）。
+
+    注意：assets/ 是框架资产，由仓库维护，作品初始化不会覆盖它。
+    """
+    reader_builder.write_reader(root, work)
 
 
 def update_index(root: Path, work: dict) -> None:
@@ -247,108 +249,6 @@ D:\\project\\translations\\
 """
 
 
-READER_HTML = """<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>双语对照阅读器</title>
-<link rel="stylesheet" href="assets/reader.css">
-</head>
-<body>
-<header class="toolbar">
-  <div class="brand">双语对照阅读器</div>
-  <select id="workSelect" title="作品"></select>
-  <select id="chapterSelect" title="章节"></select>
-  <div class="segmented" aria-label="对照模式">
-    <button data-layout="side" class="active">左右</button>
-    <button data-layout="stack">上下</button>
-    <button data-layout="ja">日文</button>
-    <button data-layout="zh">中文</button>
-  </div>
-  <label class="toggle"><input id="rubyToggle" type="checkbox" checked> 注音</label>
-  <input id="searchBox" type="search" placeholder="搜索日文或中文">
-  <button id="prevChapter">上一章</button>
-  <button id="nextChapter">下一章</button>
-</header>
-<aside id="status"></aside>
-<main id="reader" class="reader layout-side"></main>
-<script src="assets/reader.js"></script>
-</body>
-</html>
-"""
-
-
-READER_CSS = """
-:root{--bg:#f7f5ef;--text:#20242a;--muted:#6b7280;--line:#d9d2c5;--panel:#ffffff;--accent:#2f6f6d;}
-body{margin:0;background:var(--bg);color:var(--text);font-family:"Microsoft YaHei","Noto Sans SC",Arial,sans-serif;}
-.toolbar{position:sticky;top:0;z-index:5;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px 16px;background:var(--panel);border-bottom:1px solid var(--line);box-shadow:0 1px 8px rgba(0,0,0,.04);}
-.brand{font-weight:700;margin-right:8px;}
-select,input,button{height:34px;border:1px solid var(--line);background:#fff;color:var(--text);border-radius:6px;padding:0 10px;font:14px/1.2 inherit;}
-button{cursor:pointer;}
-.segmented{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:#fff;}
-.segmented button{border:0;border-right:1px solid var(--line);border-radius:0;}
-.segmented button:last-child{border-right:0;}
-.segmented button.active{background:var(--accent);color:white;}
-.toggle{display:flex;gap:5px;align-items:center;font-size:14px;color:var(--muted);}
-#searchBox{min-width:220px;}
-#status{max-width:1280px;margin:12px auto 0;padding:0 18px;color:var(--muted);font-size:13px;}
-.reader{max-width:1280px;margin:0 auto;padding:10px 18px 48px;}
-.para{border-bottom:1px solid var(--line);padding:14px 0;scroll-margin-top:74px;}
-.para.active{background:#fff8dc;}
-.meta{font:12px/1.4 Consolas,monospace;color:var(--muted);margin-bottom:6px;}
-.texts{display:grid;gap:18px;}
-.layout-side .texts{grid-template-columns:minmax(0,1fr) minmax(0,1fr);}
-.layout-stack .texts{grid-template-columns:1fr;gap:8px;}
-.layout-ja .zh,.layout-zh .ja{display:none;}
-.ja,.zh{font-size:17px;line-height:1.9;overflow-wrap:anywhere;}
-.ja{font-family:"Yu Mincho","Yu Gothic","Meiryo",serif;}
-rt{font-size:.58em;color:#8a4a18;}
-.hide-ruby rt{display:none;}
-.chapter-title{background:#ece7dc;border:1px solid var(--line);border-radius:8px;margin-top:18px;padding:14px 12px;}
-mark{background:#ffe28a;padding:0 2px;}
-body.dark{--bg:#17191c;--text:#e8e3d9;--muted:#a7adb6;--line:#33373d;--panel:#202329;--accent:#3e8d87;}
-body.dark select,body.dark input,body.dark button{background:#181b20;color:var(--text);border-color:var(--line);}
-@media(max-width:760px){.layout-side .texts{grid-template-columns:1fr}.toolbar{align-items:stretch}.brand{width:100%}select,#searchBox{min-width:0;flex:1}.ja,.zh{font-size:16px}}
-"""
-
-
-READER_JS = """
-const state = { index: null, work: null, layout: localStorage.getItem("reader.layout") || "side" };
-const reader = document.getElementById("reader");
-const statusEl = document.getElementById("status");
-const workSelect = document.getElementById("workSelect");
-const chapterSelect = document.getElementById("chapterSelect");
-const rubyToggle = document.getElementById("rubyToggle");
-const searchBox = document.getElementById("searchBox");
-
-async function loadJson(path){ const res = await fetch(path); if(!res.ok) throw new Error(path); return res.json(); }
-function saveProgress(){ if(state.work){ localStorage.setItem(`reader.progress.${state.work.work_id}`, String(window.scrollY)); } }
-function restoreProgress(){ const y = Number(localStorage.getItem(`reader.progress.${state.work.work_id}`)||0); if(y) setTimeout(()=>scrollTo(0,y), 50); }
-function setLayout(layout){ state.layout = layout; localStorage.setItem("reader.layout", layout); reader.className = `reader layout-${layout}`; document.querySelectorAll("[data-layout]").forEach(b=>b.classList.toggle("active", b.dataset.layout===layout)); }
-function stripHtml(value){ const div=document.createElement("div"); div.innerHTML=value; return div.textContent||""; }
-function renderStatus(){ const s=state.work.stats; statusEl.textContent=`${state.work.title}｜章节 ${s.chapter_count}｜段落 ${s.paragraph_count}｜已翻译 ${s.translated_count}｜待翻译 ${s.pending_count}`; }
-function paraHtml(p){ const isChapter = state.work.chapters.some(c=>c.start_paragraph_id===p.id); return `<section class="para ${isChapter?"chapter-title":""}" id="${p.id}" data-chapter="${p.chapter_id}"><div class="meta">${p.id} · ${p.chapter_id} · ${p.translation_status}</div><div class="texts"><div class="ja" lang="ja">${p.ja_ruby_html}</div><div class="zh" lang="zh-CN">${escapeHtml(p.zh || "（待翻译）")}</div></div></section>`; }
-function escapeHtml(s){ return String(s).replace(/[&<>"']/g, ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch])).replace(/\\n/g,"<br>"); }
-function renderWork(){ reader.innerHTML = state.work.paragraphs.map(paraHtml).join(""); renderStatus(); fillChapters(); setLayout(state.layout); reader.classList.toggle("hide-ruby", !rubyToggle.checked); restoreProgress(); }
-function fillChapters(){ chapterSelect.innerHTML = state.work.chapters.map(c=>`<option value="${c.chapter_id}">${c.title_ja}</option>`).join(""); }
-async function selectWork(workId){ const entry=state.index.works.find(w=>w.work_id===workId); state.work=await loadJson(entry.path); localStorage.setItem("reader.work", workId); renderWork(); }
-function jumpChapter(delta){ const i=chapterSelect.selectedIndex + delta; if(i>=0 && i<chapterSelect.options.length){ chapterSelect.selectedIndex=i; document.querySelector(`[data-chapter="${chapterSelect.value}"]`)?.scrollIntoView(); } }
-function doSearch(){ const q=searchBox.value.trim(); document.querySelectorAll("mark").forEach(m=>m.replaceWith(document.createTextNode(m.textContent))); if(!q)return; const target=[...document.querySelectorAll(".para")].find(p=>(p.textContent||"").includes(q)); if(target){ target.scrollIntoView(); target.classList.add("active"); setTimeout(()=>target.classList.remove("active"),1600); } }
-window.addEventListener("scroll", ()=>{ clearTimeout(window.__saveTimer); window.__saveTimer=setTimeout(saveProgress, 250); });
-document.querySelectorAll("[data-layout]").forEach(btn=>btn.addEventListener("click",()=>setLayout(btn.dataset.layout)));
-rubyToggle.addEventListener("change",()=>reader.classList.toggle("hide-ruby", !rubyToggle.checked));
-chapterSelect.addEventListener("change",()=>document.querySelector(`[data-chapter="${chapterSelect.value}"]`)?.scrollIntoView());
-workSelect.addEventListener("change",()=>selectWork(workSelect.value));
-searchBox.addEventListener("keydown",e=>{ if(e.key==="Enter") doSearch(); });
-document.getElementById("prevChapter").addEventListener("click",()=>jumpChapter(-1));
-document.getElementById("nextChapter").addEventListener("click",()=>jumpChapter(1));
-(async function init(){ state.index=await loadJson("works/index.json"); workSelect.innerHTML=state.index.works.map(w=>`<option value="${w.work_id}">${w.title}</option>`).join(""); await selectWork(localStorage.getItem("reader.work") || state.index.works[0].work_id); })().catch(err=>{ statusEl.textContent=`加载失败：${err.message}`; });
-"""
-
-
-def write_prompt(root: Path) -> None:
-    (root / "prompt_schema.md").write_text(PROMPT_SCHEMA, encoding="utf-8", newline="\n")
 
 
 def validate(work: dict, root: Path) -> dict:
@@ -391,13 +291,9 @@ def main() -> None:
                 shutil.copy2(file, nested_translation_dir / file.name)
 
     work = build_work(args.work_id, args.title, args.source, nested_translation_dir)
-    write_reader(args.root)
+    write_reader(args.root, work)
     update_index(args.root, work)
     write_chunks(work, args.root / "chunks" / args.work_id, args.chunk_size)
-    write_prompt(args.root)
-    tools_dir = args.root / "tools"
-    tools_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(Path(__file__), tools_dir / "generate_translation_reader.py")
     print(json.dumps(validate(work, args.root), ensure_ascii=False, indent=2))
 
 
