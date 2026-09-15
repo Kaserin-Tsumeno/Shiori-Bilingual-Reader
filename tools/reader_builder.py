@@ -38,27 +38,24 @@ TEMPLATE = '''<!doctype html>
     <nav id="bookmarkList" class="chapter-list" aria-label="书签列表" hidden></nav>
   </aside>
   <section class="content">
-    <header class="toolbar">
-      <button id="menuToggle" class="menu-toggle">目录</button>
-      <select id="chapterSelect" title="章节"></select>
-      <div class="segmented" aria-label="对照模式">
+    <header class="toolbar" id="toolbar">
+      <button id="menuToggle" class="menu-toggle" title="目录 / 隐藏侧栏">☰</button>
+      <div class="sel-wrap"><select id="chapterSelect" title="章节"></select></div>
+      <div class="segmented" data-slot="layout" aria-label="对照模式">
         <button data-layout="side" class="active">左右</button>
         <button data-layout="stack">上下</button>
         <button data-layout="ja">日文</button>
         <button data-layout="zh">中文</button>
       </div>
-      <label class="toggle"><input id="rubyToggle" type="checkbox" checked> 注音</label>
-      <button id="fontMinus" title="减小字号">A-</button>
-      <button id="fontPlus" title="放大字号">A+</button>
-      <button id="darkToggle" title="切换深浅色">暗</button>
-      <input id="searchBox" type="search" placeholder="搜索日文或中文">
-      <button id="prevChapter">上一章</button>
-      <button id="nextChapter">下一章</button>
-      <div class="menu-wrap">
-        <button id="moreBtn" type="button" title="更多">⋯</button>
-      </div>
+      <label class="toggle" data-slot="tools"><input id="rubyToggle" type="checkbox" checked> 注音</label>
+      <button id="fontMinus" data-slot="tools" title="减小字号">A-</button>
+      <button id="fontPlus" data-slot="tools" title="放大字号">A+</button>
+      <button id="darkToggle" data-slot="tools" title="切换深浅色">暗</button>
+      <input id="searchBox" data-slot="search" type="search" placeholder="搜索日文或中文">
+      <button id="prevChapter" data-slot="nav">上一章</button>
+      <button id="nextChapter" data-slot="nav">下一章</button>
+      <div class="menu-wrap"><button id="moreBtn" type="button" title="更多">⋯</button></div>
       <input id="importFile" type="file" accept=".json,application/json" hidden>
-      <div class="progress-track" id="progressTrack" title="全书阅读进度（点击或拖动可跳转）"><div class="progress-fill" id="progressFill"></div></div>
     </header>
     <aside id="status"></aside>
     <main id="reader" class="reader layout-side"><div class="loading-hint">正在加载…</div></main>
@@ -67,14 +64,21 @@ TEMPLATE = '''<!doctype html>
 <!-- 菜单必须放在 .toolbar 之外：toolbar 的 backdrop-filter 会创建包含块，
      使内部 position:fixed 相对工具栏而非视口定位（手机底部抽屉会错位）。 -->
 <div id="moreMenu" class="menu" role="menu">
+  <div class="menu-slot" id="slotLayout"></div>
+  <div class="menu-slot" id="slotTools"></div>
+  <div class="menu-slot" id="slotSearch"></div>
+  <div class="menu-slot" id="slotNav"></div>
+  <div class="menu-sep"></div>
   <button type="button" id="expBackup">导出备份（书签 / 进度）</button>
   <button type="button" id="impBackup">导入备份…</button>
-  <hr>
+  <div class="menu-sep"></div>
   <button type="button" id="expZh">导出译文（TXT）</button>
   <button type="button" id="expMd">导出双语对照（Markdown）</button>
-  <hr>
+  <div class="menu-sep"></div>
   <button type="button" id="showHelp">键盘快捷键</button>
 </div>
+<!-- 进度条在 toolbar 之外：滚动隐藏工具栏时它仍然可见 -->
+<div class="progress-track" id="progressTrack" title="全书阅读进度（点击或拖动可跳转）"><div class="progress-fill" id="progressFill"></div></div>
 <div id="helpLayer" class="help">
   <div class="help-card">
     <h3>键盘快捷键</h3>

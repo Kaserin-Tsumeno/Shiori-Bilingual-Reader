@@ -58,9 +58,17 @@ body.dark .chapter-item:active,body.dark .toolbar button:active,body.dark .side-
    位置由 JS 的 positionMenu() 按视口计算；窄屏则退化为底部抽屉。 */
 .menu{position:fixed;top:0;right:0;z-index:30;min-width:214px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.16);padding:6px;display:none}
 .menu.show{display:block}
-.menu button{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:7px;padding:9px 10px;font-size:13px;color:var(--text);height:auto;min-height:0}
-.menu button:hover{background:var(--soft)}
-.menu hr{border:0;border-top:1px solid var(--line);margin:5px 4px}
+.menu > button{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:7px;padding:9px 10px;font-size:13px;color:var(--text);height:auto;min-height:0}
+.menu > button:hover{background:var(--soft)}
+.menu-sep{height:1px;background:var(--line);margin:7px 4px}
+/* 菜单里的功能分区（窄屏时工具栏控件会被移动到这里） */
+.menu-slot{display:grid;gap:8px;padding:2px 4px 4px}
+.menu-slot:empty{display:none}
+.menu-slot .segmented{width:100%;display:grid;grid-template-columns:repeat(4,1fr);background:var(--soft)}
+.menu-slot .segmented button{border-right:1px solid var(--line);height:40px;min-width:0}
+.menu-slot .toggle{height:40px;justify-content:flex-start}
+.menu-slot input[type=search]{height:40px;width:100%}
+.menu-slot button{height:40px}
 body.dark .menu button:hover{background:#343943}
 /* ── 快捷键帮助层 ── */
 .help{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.45);display:none}
@@ -84,8 +92,9 @@ body.dark.is-scrolling ::-webkit-scrollbar-thumb{background-color:rgba(255,255,2
 ::-webkit-scrollbar-thumb:hover{background-color:rgba(0,0,0,.38)}
 body.dark ::-webkit-scrollbar-thumb:hover{background-color:rgba(255,255,255,.42)}
 ::-webkit-scrollbar-corner{background:transparent}
-/* ── 全书进度条：滚动条只反映当前渲染窗口，这个才代表全书位置 ── */
-.progress-track{position:absolute;left:0;right:0;bottom:0;height:3px;background:transparent;cursor:pointer;touch-action:none;z-index:2}
+/* ── 全书进度条：滚动条只反映当前渲染窗口，这个才代表全书位置 ──
+   放在 body 级 fixed：滚动隐藏工具栏时它仍然可见。 */
+.progress-track{position:fixed;left:0;right:0;top:0;height:3px;background:transparent;cursor:pointer;touch-action:none;z-index:45}
 .progress-track::after{content:"";position:absolute;inset:0;background:var(--line);opacity:.35}
 .progress-fill{position:relative;height:100%;width:0;background:var(--accent2);opacity:.85;transition:width .1s linear}
 .progress-track:hover{height:6px}
@@ -97,9 +106,24 @@ body.dark .progress-fill{background:#4fa39c}
    桌面是相对「⋯」按钮向左展开（right:0）；手机上工具栏换行后按钮靠左，
    214px 宽的菜单会从屏幕左边溢出，因此改为贴底的底部抽屉。 */
 @media(max-width:900px){
-  .menu{position:fixed;left:0;right:0;bottom:0;top:auto;min-width:0;width:auto;border-radius:14px 14px 0 0;padding:8px 10px calc(12px + env(safe-area-inset-bottom,0px));max-height:72vh;overflow:auto;box-shadow:0 -8px 34px rgba(0,0,0,.3)}
-  .menu button{padding:13px 12px;font-size:14px}
-  .menu hr{margin:7px 4px}
+  .menu{position:fixed;left:0;right:0;bottom:0;top:auto;min-width:0;width:auto;border-radius:14px 14px 0 0;padding:8px 10px calc(12px + env(safe-area-inset-bottom,0px));max-height:76vh;overflow:auto;box-shadow:0 -8px 34px rgba(0,0,0,.3)}
+  .menu > button{padding:13px 12px;font-size:14px}
+  /* 窄屏工具栏：只剩 ☰ / 章节 / ⋯ 一行（其余控件被 JS 移入抽屉） */
+  .toolbar{flex-wrap:nowrap;align-items:center;gap:8px;padding:6px 10px;min-height:0;--toolbar-h:52px}
+  .toolbar .sel-wrap{flex:1 1 0;min-width:0;display:flex}
+  .toolbar .sel-wrap select{width:100%;min-width:0;text-overflow:ellipsis}
+  .toolbar .menu-wrap{flex:0 0 auto}
+  .menu-toggle{display:inline-flex;flex:0 0 auto}
+}
+/* ── 滚动时自动隐藏工具栏（沉浸阅读）；进度条固定在顶部不受影响 ── */
+.toolbar{transition:transform .22s ease}
+body.toolbar-hidden .toolbar{transform:translateY(-100%)}
+/* ── 桌面端：侧栏可单独折叠（与工具栏的隐藏互不影响） ── */
+@media(min-width:901px){
+  .app{transition:grid-template-columns .22s ease}
+  .sidebar{transition:transform .22s ease,opacity .22s ease}
+  body.sidebar-collapsed .app{grid-template-columns:0 minmax(0,1fr)}
+  body.sidebar-collapsed .sidebar{transform:translateX(-100%);opacity:0;pointer-events:none}
 }
 body.dark .side-tabs button{background:#181b20;color:var(--text)}
 body.dark .side-tabs button.active{background:var(--accent);color:#17191c}

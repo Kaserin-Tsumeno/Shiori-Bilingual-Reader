@@ -183,7 +183,12 @@ function renderChapters(filter=''){
   chapterList.querySelectorAll('.chapter-item').forEach(btn=>btn.addEventListener('click',()=>jumpTo(btn.dataset.chapter,null,true)));
   updateActiveChapter();
 }
-function chapterLabel(c){ const ja=c.title_ja||c.chapter_id, zh=c.title_zh||''; return zh?`${ja} ｜ ${zh}`:ja; }
+/* 窄屏只显示中文标题（更短，避免把 ⋯ 挤出屏幕）；宽屏中日对照。 */
+function chapterLabel(c){
+  const ja=c.title_ja||c.chapter_id, zh=c.title_zh||'';
+  if(window.innerWidth<=900) return zh||ja;
+  return zh?`${ja} ｜ ${zh}`:ja;
+}
 function fillChapters(){ chapterSelect.innerHTML=state.work.chapters.map(c=>`<option value="${c.chapter_id}">${escapeHtml(chapterLabel(c))}</option>`).join(''); }
 function renderWork(){
   prepareWork(); loadBookmarks();
@@ -288,8 +293,8 @@ function onScroll(){
   updateActiveChapter();
   clearTimeout(window.__saveTimer); window.__saveTimer=setTimeout(saveProgress,400);
 }
-window.addEventListener('scroll',()=>{ flashScrollbar(); closeMenu(); if(ticking) return; ticking=true; requestAnimationFrame(()=>{ ticking=false; onScroll(); }); },{passive:true});
-window.addEventListener('resize',()=>{ closeMenu(); applyLayout(); if(window.innerWidth>900) closeSidebar(); });
+window.addEventListener('scroll',()=>{ flashScrollbar(); closeMenu(); updateToolbarAuto(); if(ticking) return; ticking=true; requestAnimationFrame(()=>{ ticking=false; onScroll(); }); },{passive:true});
+window.addEventListener('resize',()=>{ closeMenu(); layoutToolbar(); applyLayout(); if(window.innerWidth>900) closeSidebar(); });
 window.addEventListener('hashchange',()=>{ if(state.work) applyHash(); });
 
 /* ---------- 全书进度条 ----------
@@ -394,7 +399,56 @@ function exportContent(kind){
   else download(`${fileBase()}-译文-${stamp()}.txt`, text, 'text/plain');
 }
 
-/* ---------- 菜单与帮助 ---------- */
+/* ---------- 工具栏/侧栏：窄屏收纳、宽屏折叠 ---------- */
+/* 窄屏把工具栏控件（对照/注音/字号/主题/搜索/上下章）移入抽屉，
+   宽屏再移回原位；用注释节点记住原始位置，避免顺序错乱。 */
+const slotMap={layout:'slotLayout',tools:'slotTools',search:'slotSearch',nav:'slotNav'};
+const movable=[...document.querySelectorAll('[data-slot]')];
+const placeholders=new Map();
+movable.forEach(el=>{ const ph=document.createComment('ph'); el.parentNode.insertBefore(ph,el); placeholders.set(el,ph); });
+function layoutToolbar(){
+  const narrow=window.innerWidth<=900;
+  movable.forEach(el=>{
+    const slot=byId(slotMap[el.dataset.slot]); if(!slot) return;
+    if(narrow){ if(el.parentNode!==slot) slot.appendChild(el); }
+    else { const ph=placeholders.get(el); if(ph && ph.parentNode && el.parentNode!==ph.parentNode) ph.parentNode.insertBefore(el, ph.nextSibling); }
+  });
+  if(state.work) fillChapters();   // 章节标题文案随宽窄屏变化，需要重建
+}
+function applySidebarPref(){ document.body.classList.toggle('sidebar-collapsed', localStorage.getItem('reader.sidebarCollapsed')==='1'); }
+function toggleSidebarWide(){
+  const c=document.body.classList.toggle('sidebar-collapsed');
+  localStorage.setItem('reader.sidebarCollapsed', c?'1':'0');
+}
+/* 滚动时自动隐藏工具栏（沉浸阅读）。菜单/侧栏打开时不隐藏。 */
+let lastScrollY=-1;
+function updateToolbarAuto(){
+  const y=window.scrollY;
+  if(lastScrollY<0){ lastScrollY=y; return; }   // 首次只记录，避免打开页面就隐藏
+  const dy=y-lastScrollY;
+  if(Math.abs(dy)<6) return;
+  lastScrollY=y;
+  if(moreMenu && moreMenu.classList.contains('show')) return;
+  if(sidebar.classList.contains('open')) return;
+  if(dy>0 && y>140) document.body.classList.add('toolbar-hidden');
+  else if(dy<0) document.body.classList.remove('toolbar-hidden');
+}
+
+/* ---------- 章节跳转：记住来源位置，返回时回到原处 ---------- */
+const chapterMemory=new Map();
+function rememberPosition(){ const a=currentAnchor(); if(a) chapterMemory.set(a.dataset.chapter, a.id); }
+function gotoChapterIndex(idx){
+  const chs=state.work.chapters; if(idx<0||idx>=chs.length) return;
+  rememberPosition();
+  const target=chs[idx].chapter_id;
+  const mem=chapterMemory.get(target);
+  jumpTo(target, (mem && paraById.has(mem)) ? mem : null, false);
+}
+function jumpChapterMem(delta){
+  const cur=chapterPos.get(state.currentChapter || chapterSelect.value);
+  if(cur===undefined) return;
+  gotoChapterIndex(cur+delta);
+}
 /* 菜单是 body 级 fixed 元素，位置按视口算；窄屏用 CSS 的底部抽屉（bottom:0）。 */
 function positionMenu(){
   if(!moreMenu || !moreBtn) return;
@@ -422,8 +476,8 @@ function onKey(e){
   if((e.ctrlKey||e.metaKey) && (e.key==='f'||e.key==='F')){ e.preventDefault(); if(searchBox) searchBox.focus(); return; }
   if(e.ctrlKey||e.metaKey||e.altKey) return;
   switch(e.key){
-    case 'ArrowLeft': e.preventDefault(); jumpChapter(-1); break;
-    case 'ArrowRight': e.preventDefault(); jumpChapter(1); break;
+    case 'ArrowLeft': e.preventDefault(); jumpChapterMem(-1); break;
+    case 'ArrowRight': e.preventDefault(); jumpChapterMem(1); break;
     case ' ': e.preventDefault(); window.scrollBy(0,(e.shiftKey?-1:1)*Math.max(200,window.innerHeight-140)); break;
     case 'Home': e.preventDefault(); if(state.currentChapter) jumpTo(state.currentChapter,null,false); break;
     case 'b': case 'B': { const a=currentAnchor(); if(a) toggleBookmark(a.id); break; }
@@ -448,9 +502,22 @@ on(chapterSelect,'change',()=>jumpTo(chapterSelect.value,null,false));
 on(workSelect,'change',()=>selectWork(workSelect.value));
 on(searchBox,'keydown',e=>{ if(e.key==='Enter') doSearch(); });
 on(sideSearch,'input',()=>{ if(state.tab==='bookmarks') renderBookmarks(); else if(state.work) renderChapters(sideSearch.value); });
-on(byId('prevChapter'),'click',()=>jumpChapter(-1));
-on(byId('nextChapter'),'click',()=>jumpChapter(1));
-on(byId('menuToggle'),'click',openSidebar);
+on(byId('prevChapter'),'click',()=>jumpChapterMem(-1));
+on(byId('nextChapter'),'click',()=>jumpChapterMem(1));
+on(byId('menuToggle'),'click',()=>{ if(window.innerWidth<=900) openSidebar(); else toggleSidebarWide(); });
+/* 左右滑动翻章（触摸）。三重防误触：位移阈值、水平分量占优、时长限制；
+   翻章前后位置由 chapterMemory 记忆，反向滑回会回到原来的段落而不是章首。 */
+let tsx=0,tsy=0,tst=0,swipeTracking=false;
+const SWIPE_MIN=70;
+reader.addEventListener('touchstart',e=>{ if(e.touches.length!==1) return; const t=e.touches[0]; tsx=t.clientX; tsy=t.clientY; tst=Date.now(); swipeTracking=true; },{passive:true});
+reader.addEventListener('touchend',e=>{
+  if(!swipeTracking) return; swipeTracking=false;
+  const t=e.changedTouches[0]; if(!t) return;
+  const dx=t.clientX-tsx, dy=t.clientY-tsy, dt=Date.now()-tst;
+  if(dt>900 || Math.abs(dx)<SWIPE_MIN) return;
+  if(Math.abs(dx) < Math.abs(dy)*1.5) return;
+  if(dx<0) jumpChapterMem(1); else jumpChapterMem(-1);
+},{passive:true});
 on(overlay,'click',closeSidebar);
 on(darkToggle,'click',cycleTheme);
 on(fontMinus,'click',()=>{ state.fontScale=Math.max(-3,state.fontScale-1); applyPrefs(); });
@@ -469,6 +536,8 @@ document.addEventListener('keydown',onKey);
 
 (async function init(){
   applyPrefs();
+  applySidebarPref();
+  layoutToolbar();
   state.index=await loadJson('works/index.json');
   workSelect.innerHTML=state.index.works.map(w=>`<option value="${w.work_id}">${escapeHtml(w.title)}</option>`).join('');
   await selectWork(localStorage.getItem('reader.work') || state.index.works[0].work_id);
