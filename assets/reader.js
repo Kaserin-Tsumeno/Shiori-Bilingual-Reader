@@ -1,7 +1,7 @@
 
 const state = { index:null, work:null, layout:localStorage.getItem("reader.layout") || "side", currentChapter:null, tab:'chapters', fontScale:Number(localStorage.getItem('reader.fontScale')||0), theme:null };
 const reader=document.getElementById("reader"), statusEl=document.getElementById("status"), workSelect=document.getElementById("workSelect"), chapterSelect=document.getElementById("chapterSelect"), rubyToggle=document.getElementById("rubyToggle"), searchBox=document.getElementById("searchBox"), chapterList=document.getElementById("chapterList"), bookmarkList=document.getElementById("bookmarkList"), sideSearch=document.getElementById("sideSearch"), sidebar=document.getElementById("sidebar"), overlay=document.getElementById("overlay"), darkToggle=document.getElementById('darkToggle'), fontMinus=document.getElementById('fontMinus'), fontPlus=document.getElementById('fontPlus'), bmCount=document.getElementById('bmCount');
-const moreBtn=document.getElementById('moreBtn'), moreMenu=document.getElementById('moreMenu'), importFile=document.getElementById('importFile'), helpLayer=document.getElementById('helpLayer');
+const moreBtn=document.getElementById('moreBtn'), moreMenu=document.getElementById('moreMenu'), importFile=document.getElementById('importFile'), helpLayer=document.getElementById('helpLayer'), progressTrack=document.getElementById('progressTrack'), progressFill=document.getElementById('progressFill');
 
 /* 长篇（数万段）必须分批渲染：一次插入全部段落会让浏览器卡死。
    按「章」渲染 + 滚动窗口回收，使 DOM 规模有界。 */
@@ -183,6 +183,7 @@ function renderWork(){
   fillChapters(); renderChapters(sideSearch?sideSearch.value:''); renderBookmarks();
   applyLayout(); reader.classList.toggle('hide-ruby', !rubyToggle.checked);
   if(!applyHash() && !restoreProgress()) renderRange(0, CHUNK);
+  updateGlobalProgress();
 }
 async function selectWork(workId){
   const entry=state.index.works.find(w=>w.work_id===workId);
@@ -214,6 +215,7 @@ function jumpTo(chapterId, paraId, close){
   scrollToPara((paraId && document.getElementById(paraId)) || reader.querySelector('.para'));
   if(close) closeSidebar();
   setHash(paraId||chapterId);
+  updateGlobalProgress();
   releaseJumpWhenStable();
 }
 function restoreProgress(){
@@ -255,8 +257,16 @@ function openSidebar(){ sidebar.classList.add('open'); overlay.classList.add('sh
 function closeSidebar(){ sidebar.classList.remove('open'); overlay.classList.remove('show'); }
 
 /* ---------- 滚动 ---------- */
+let scrollbarTimer=null;
+function flashScrollbar(){
+  document.body.classList.add('is-scrolling');
+  clearTimeout(scrollbarTimer);
+  scrollbarTimer=setTimeout(()=>document.body.classList.remove('is-scrolling'),1100);
+}
 function onScroll(){
-  if(!state.work || jumping) return;
+  if(!state.work) return;
+  updateGlobalProgress();
+  if(jumping) return;
   const doc=document.documentElement;
   if(!sidebar.classList.contains('open')){
     if(window.innerHeight+window.scrollY>doc.scrollHeight-PREFETCH && winEnd<state.work.chapters.length) appendNext();
@@ -265,9 +275,44 @@ function onScroll(){
   updateActiveChapter();
   clearTimeout(window.__saveTimer); window.__saveTimer=setTimeout(saveProgress,400);
 }
-window.addEventListener('scroll',()=>{ if(ticking) return; ticking=true; requestAnimationFrame(()=>{ ticking=false; onScroll(); }); },{passive:true});
+window.addEventListener('scroll',()=>{ flashScrollbar(); if(ticking) return; ticking=true; requestAnimationFrame(()=>{ ticking=false; onScroll(); }); },{passive:true});
 window.addEventListener('resize',()=>{ applyLayout(); if(window.innerWidth>900) closeSidebar(); });
 window.addEventListener('hashchange',()=>{ if(state.work) applyHash(); });
+
+/* ---------- 全书进度条 ----------
+   滚动条只能反映「当前渲染窗口」（约 40 章），代表不了全书位置；
+   这个进度条按段落序号算，才是真实的全书进度。 */
+function paraSeq(pid){ const n=parseInt(String(pid).slice(1),10); return Number.isFinite(n)?n:0; }
+function updateGlobalProgress(){
+  if(!progressFill || !state.work) return;
+  const total=state.work.paragraphs.length||1;
+  const a=currentAnchor();
+  const seq=a?paraSeq(a.id):1;
+  const pct=Math.max(0,Math.min(100, seq/total*100));
+  progressFill.style.width=pct.toFixed(2)+'%';
+  if(progressTrack) progressTrack.title=`全书进度 ${pct.toFixed(1)}%（点击或拖动可跳转）`;
+}
+function seekRatio(ratio){
+  if(!state.work) return;
+  const total=state.work.paragraphs.length;
+  const n=Math.max(1,Math.min(total,Math.round(ratio*total)));
+  const p=paraById.get('p'+String(n).padStart(5,'0'));
+  if(p) jumpTo(p.chapter_id,p.id,false);
+}
+let dragRatio=null;
+if(progressTrack){
+  const ratioAt=ev=>{ const r=progressTrack.getBoundingClientRect(); return r.width?Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width)):0; };
+  progressTrack.addEventListener('pointerdown',ev=>{
+    ev.preventDefault();
+    dragRatio=ratioAt(ev);
+    progressTrack.classList.add('dragging');
+    try{ progressTrack.setPointerCapture(ev.pointerId); }catch(e){}
+    if(progressFill) progressFill.style.width=(dragRatio*100).toFixed(2)+'%';   /* 拖动仅预览，松手才跳转，避免狂渲染 */
+  });
+  progressTrack.addEventListener('pointermove',ev=>{ if(dragRatio===null) return; dragRatio=ratioAt(ev); if(progressFill) progressFill.style.width=(dragRatio*100).toFixed(2)+'%'; });
+  progressTrack.addEventListener('pointerup',()=>{ if(dragRatio===null) return; const r=dragRatio; dragRatio=null; progressTrack.classList.remove('dragging'); seekRatio(r); });
+  progressTrack.addEventListener('pointercancel',()=>{ dragRatio=null; progressTrack.classList.remove('dragging'); updateGlobalProgress(); });
+}
 
 /* ---------- 下载 / 备份 ---------- */
 function stamp(){ const d=new Date(), p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`; }

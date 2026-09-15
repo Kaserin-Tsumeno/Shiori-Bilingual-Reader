@@ -71,6 +71,26 @@ body.dark .menu button:hover{background:#343943}
 .help-card td:first-child{width:136px}
 .help-card kbd{display:inline-block;min-width:20px;padding:2px 6px;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;background:var(--soft);font:12px/1.4 Consolas,monospace}
 .help-card .help-close{margin-top:14px;width:100%}
+/* ── 滚动条：细、圆角、随主题变色；平时淡出，滚动时显现 ── */
+*{scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.22) transparent}
+body.dark *{scrollbar-color:rgba(255,255,255,.26) transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background-color:transparent;border-radius:999px;border:3px solid transparent;background-clip:padding-box;transition:background-color .25s ease}
+body.is-scrolling ::-webkit-scrollbar-thumb{background-color:rgba(0,0,0,.2)}
+body.dark.is-scrolling ::-webkit-scrollbar-thumb{background-color:rgba(255,255,255,.24)}
+::-webkit-scrollbar-thumb:hover{background-color:rgba(0,0,0,.38)}
+body.dark ::-webkit-scrollbar-thumb:hover{background-color:rgba(255,255,255,.42)}
+::-webkit-scrollbar-corner{background:transparent}
+/* ── 全书进度条：滚动条只反映当前渲染窗口，这个才代表全书位置 ── */
+.progress-track{position:absolute;left:0;right:0;bottom:0;height:3px;background:transparent;cursor:pointer;touch-action:none;z-index:2}
+.progress-track::after{content:"";position:absolute;inset:0;background:var(--line);opacity:.35}
+.progress-fill{position:relative;height:100%;width:0;background:var(--accent2);opacity:.85;transition:width .1s linear}
+.progress-track:hover{height:6px}
+.progress-track:hover .progress-fill{opacity:1}
+.progress-track.dragging .progress-fill{transition:none;opacity:1}
+body.dark .progress-fill{background:#4fa39c}
+@media(max-width:560px){::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{border-width:2px}}
 body.dark .side-tabs button{background:#181b20;color:var(--text)}
 body.dark .side-tabs button.active{background:var(--accent);color:#17191c}
 body.dark .bm-item:hover{background:#2b2f36}

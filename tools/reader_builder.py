@@ -67,6 +67,7 @@ TEMPLATE = '''<!doctype html>
         </div>
       </div>
       <input id="importFile" type="file" accept=".json,application/json" hidden>
+      <div class="progress-track" id="progressTrack" title="全书阅读进度（点击或拖动可跳转）"><div class="progress-fill" id="progressFill"></div></div>
     </header>
     <aside id="status"></aside>
     <main id="reader" class="reader layout-side"><div class="loading-hint">正在加载…</div></main>
