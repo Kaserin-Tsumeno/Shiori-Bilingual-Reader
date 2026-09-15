@@ -54,10 +54,39 @@ TEMPLATE = '''<!doctype html>
       <input id="searchBox" type="search" placeholder="搜索日文或中文">
       <button id="prevChapter">上一章</button>
       <button id="nextChapter">下一章</button>
+      <div class="menu-wrap">
+        <button id="moreBtn" type="button" title="更多">⋯</button>
+        <div id="moreMenu" class="menu" role="menu">
+          <button type="button" id="expBackup">导出备份（书签 / 进度）</button>
+          <button type="button" id="impBackup">导入备份…</button>
+          <hr>
+          <button type="button" id="expZh">导出译文（TXT）</button>
+          <button type="button" id="expMd">导出双语对照（Markdown）</button>
+          <hr>
+          <button type="button" id="showHelp">键盘快捷键</button>
+        </div>
+      </div>
+      <input id="importFile" type="file" accept=".json,application/json" hidden>
     </header>
     <aside id="status"></aside>
     <main id="reader" class="reader layout-side"><div class="loading-hint">正在加载…</div></main>
   </section>
+</div>
+<div id="helpLayer" class="help">
+  <div class="help-card">
+    <h3>键盘快捷键</h3>
+    <p class="tip">输入框获得焦点时，除 Esc 外快捷键不生效。</p>
+    <table>
+      <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>上一章 / 下一章</td></tr>
+      <tr><td><kbd>空格</kbd> / <kbd>Shift</kbd>+<kbd>空格</kbd></td><td>下翻一屏 / 上翻一屏</td></tr>
+      <tr><td><kbd>Home</kbd></td><td>回到本章开头</td></tr>
+      <tr><td><kbd>b</kbd></td><td>为当前段落加 / 取消书签</td></tr>
+      <tr><td><kbd>/</kbd> 或 <kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>聚焦搜索框</td></tr>
+      <tr><td><kbd>?</kbd></td><td>显示 / 关闭本帮助</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>关闭菜单 / 侧栏 / 本帮助</td></tr>
+    </table>
+    <button type="button" class="help-close" id="helpClose">关闭</button>
+  </div>
 </div>
 <script id="reader-index" type="application/json">{index_json}</script>
 <script id="reader-works" type="application/json">{works_json}</script>

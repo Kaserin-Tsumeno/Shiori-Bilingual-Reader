@@ -44,6 +44,33 @@ body.dark{--bg:#17191c;--text:#e8e3d9;--muted:#a7adb6;--line:#33373d;--panel:#20
 @media(hover:none){.toolbar button,.toolbar select,.segmented button{min-height:40px}.bm-btn{width:32px;height:32px}}
 /* 无障碍：用户要求减少动画时全部关闭 */
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+/* ── 按钮点按反馈（点按类反馈要短，>150ms 会觉得黏） ── */
+button,.chapter-item,.bm-jump{transition:background-color .15s ease,color .15s ease,transform .06s ease}
+button:active{transform:translateY(1px)}
+.segmented button:active{transform:none;background:var(--soft)}
+.chapter-item:active,.toolbar button:active,.side-tabs button:active,.menu button:active{background:var(--soft)}
+body.dark .chapter-item:active,body.dark .toolbar button:active,body.dark .side-tabs button:active,body.dark .menu button:active{background:#343943}
+@keyframes bm-pop{0%{transform:scale(.7)}60%{transform:scale(1.25)}100%{transform:scale(1)}}
+.bm-btn.on{animation:bm-pop .18s ease}
+/* ── 「⋯」更多菜单 ── */
+.menu-wrap{position:relative;display:inline-flex}
+.menu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:214px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.16);padding:6px;display:none}
+.menu.show{display:block}
+.menu button{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:7px;padding:9px 10px;font-size:13px;color:var(--text);height:auto;min-height:0}
+.menu button:hover{background:var(--soft)}
+.menu hr{border:0;border-top:1px solid var(--line);margin:5px 4px}
+body.dark .menu button:hover{background:#343943}
+/* ── 快捷键帮助层 ── */
+.help{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.45);display:none}
+.help.show{display:flex;align-items:center;justify-content:center;padding:20px}
+.help-card{background:var(--panel);border-radius:12px;padding:20px 22px;max-width:470px;width:100%;max-height:82vh;overflow:auto;box-shadow:0 18px 50px rgba(0,0,0,.32)}
+.help-card h3{margin:0 0 4px;font-size:16px}
+.help-card p.tip{margin:0 0 12px;font-size:12px;color:var(--muted)}
+.help-card table{width:100%;border-collapse:collapse;font-size:13px}
+.help-card td{padding:7px 4px;border-bottom:1px solid var(--line);vertical-align:middle}
+.help-card td:first-child{width:136px}
+.help-card kbd{display:inline-block;min-width:20px;padding:2px 6px;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;background:var(--soft);font:12px/1.4 Consolas,monospace}
+.help-card .help-close{margin-top:14px;width:100%}
 body.dark .side-tabs button{background:#181b20;color:var(--text)}
 body.dark .side-tabs button.active{background:var(--accent);color:#17191c}
 body.dark .bm-item:hover{background:#2b2f36}

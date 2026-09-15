@@ -1,15 +1,17 @@
 
-const state = { index:null, work:null, layout:localStorage.getItem("reader.layout") || "side", currentChapter:null, tab:'chapters', fontScale:Number(localStorage.getItem('reader.fontScale')||0), dark:localStorage.getItem('reader.dark')==='1' };
+const state = { index:null, work:null, layout:localStorage.getItem("reader.layout") || "side", currentChapter:null, tab:'chapters', fontScale:Number(localStorage.getItem('reader.fontScale')||0), theme:null };
 const reader=document.getElementById("reader"), statusEl=document.getElementById("status"), workSelect=document.getElementById("workSelect"), chapterSelect=document.getElementById("chapterSelect"), rubyToggle=document.getElementById("rubyToggle"), searchBox=document.getElementById("searchBox"), chapterList=document.getElementById("chapterList"), bookmarkList=document.getElementById("bookmarkList"), sideSearch=document.getElementById("sideSearch"), sidebar=document.getElementById("sidebar"), overlay=document.getElementById("overlay"), darkToggle=document.getElementById('darkToggle'), fontMinus=document.getElementById('fontMinus'), fontPlus=document.getElementById('fontPlus'), bmCount=document.getElementById('bmCount');
+const moreBtn=document.getElementById('moreBtn'), moreMenu=document.getElementById('moreMenu'), importFile=document.getElementById('importFile'), helpLayer=document.getElementById('helpLayer');
 
-/* 长篇作品（数万段）必须分批渲染：一次插入全部段落会让浏览器卡死。
-   按「章」为单位渲染，并用滚动窗口回收远端章节，使 DOM 规模有界。 */
-const CHUNK = 3;          // 每次追加的章节数
-const MAX_WINDOW = 40;    // 窗口内保留的最大章节数
-const PREFETCH = 900;     // 距底/顶多少像素触发追加
-let winStart = 0, winEnd = 0;
-let byChapter = null, chapterStart = null, chapterPos = null, paraById = null;
-let ticking = false, jumping = false;   // jumping：跳转期间冻结自动加载，避免与滚动打架
+/* 长篇（数万段）必须分批渲染：一次插入全部段落会让浏览器卡死。
+   按「章」渲染 + 滚动窗口回收，使 DOM 规模有界。 */
+const CHUNK = 3;             // 每次追加的章节数
+const MAX_WINDOW = 40;       // 窗口内保留的最大章节数
+const PREFETCH = 900;        // 距底/顶多少像素触发追加
+const FORCE_STACK_WIDTH=720; // 窄于此宽度左右对照不可读，自动退化为上下
+let winStart=0, winEnd=0;
+let byChapter=null, chapterStart=null, chapterPos=null, paraById=null;
+let ticking=false, jumping=false, helpOpen=false;
 let bookmarks = new Map();
 
 let _idxCache, _worksCache;
@@ -18,13 +20,33 @@ function embeddedIndex(){ if(_idxCache===undefined) _idxCache=embeddedJson('read
 function embeddedWorks(){ if(_worksCache===undefined) _worksCache=embeddedJson('reader-works'); return _worksCache; }
 async function loadJson(path){ if(path==='works/index.json'){ const d=embeddedIndex(); if(d) return d; } const works=embeddedWorks(); if(works){ const hit=Object.values(works).find(w=>'works/'+w.work_id+'.json'===path); if(hit) return hit; } const res=await fetch(path); if(!res.ok) throw new Error(path); return res.json(); }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch])).replace(/\n/g,"<br>")}
-function showError(msg){ if(statusEl){ statusEl.textContent=msg; statusEl.classList.add('show'); } }
-function clearError(){ if(statusEl){ statusEl.classList.remove('show'); statusEl.textContent=''; } }
+function showError(msg){ if(statusEl){ statusEl.textContent=msg; statusEl.classList.add('show'); clearTimeout(window.__statusTimer); window.__statusTimer=setTimeout(()=>statusEl.classList.remove('show'),6000); } }
+function byId(id){ return document.getElementById(id); }
+function on(el,ev,fn){ if(el) el.addEventListener(ev,fn); }
 
-function applyPrefs(){ document.body.classList.toggle('dark',state.dark); document.documentElement.style.setProperty('--reader-font', `${17 + state.fontScale}px`); if(darkToggle) darkToggle.textContent=state.dark?'亮':'暗'; localStorage.setItem('reader.fontScale',String(state.fontScale)); localStorage.setItem('reader.dark',state.dark?'1':'0'); }
-/* 窄屏（<=720px）左右对照无法阅读，自动退化为上下排版，
-   并把按钮状态改成真实生效的布局——否则会出现"选中左右、实际显示上下"的错位。 */
-const FORCE_STACK_WIDTH = 720;
+/* ---------- 主题：auto / light / dark 三态，默认跟随系统 ---------- */
+const darkMQ = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+(function initTheme(){
+  const saved = localStorage.getItem('reader.theme');
+  if(saved==='auto'||saved==='light'||saved==='dark'){ state.theme=saved; return; }
+  const legacy = localStorage.getItem('reader.dark');     // 兼容旧的布尔存储
+  state.theme = legacy==='1' ? 'dark' : (legacy==='0' ? 'light' : 'auto');
+})();
+function isDark(){ return state.theme==='dark' || (state.theme==='auto' && !!(darkMQ && darkMQ.matches)); }
+function cycleTheme(){ state.theme = state.theme==='auto' ? 'light' : (state.theme==='light' ? 'dark' : 'auto'); applyPrefs(); }
+function applyPrefs(){
+  document.body.classList.toggle('dark', isDark());
+  document.documentElement.style.setProperty('--reader-font', `${17 + state.fontScale}px`);
+  if(darkToggle){
+    darkToggle.textContent = state.theme==='auto' ? '自动' : (state.theme==='dark' ? '暗' : '亮');
+    darkToggle.title = state.theme==='auto' ? '跟随系统（点击切换为常亮）' : (state.theme==='dark' ? '始终深色（点击切回自动）' : '始终浅色（点击切换为深色）');
+  }
+  localStorage.setItem('reader.fontScale',String(state.fontScale));
+  localStorage.setItem('reader.theme',state.theme);
+}
+if(darkMQ && darkMQ.addEventListener) darkMQ.addEventListener('change', ()=>{ if(state.theme==='auto') applyPrefs(); });
+
+/* ---------- 布局 ---------- */
 function effectiveLayout(){ return (state.layout==='side' && window.innerWidth<=FORCE_STACK_WIDTH) ? 'stack' : state.layout; }
 function applyLayout(){
   const eff=effectiveLayout(), narrow=window.innerWidth<=FORCE_STACK_WIDTH;
@@ -43,7 +65,7 @@ function prepareWork(){
   for(const p of state.work.paragraphs){ const arr=byChapter.get(p.chapter_id); if(arr) arr.push(p); paraById.set(p.id,p); }
 }
 
-/* ---------- 阅读进度：以段落为锚点（比 scrollY 可靠，重排/改渲染策略都不失效） ---------- */
+/* ---------- 阅读进度：段落锚点（比 scrollY 可靠，重排/重译都不失效） ---------- */
 function progressKey(){ return `reader.progress.${state.work.work_id}`; }
 function currentAnchor(){
   const paras=reader.querySelectorAll('.para');
@@ -51,13 +73,11 @@ function currentAnchor(){
   for(const p of paras){ if(p.getBoundingClientRect().bottom>80) return p; }
   return paras[paras.length-1];
 }
+function readProgress(){ try{ const raw=localStorage.getItem(progressKey()); if(!raw) return null; const o=JSON.parse(raw); return (o && o.para_id)?o:null; }catch(e){ return null; } }
 function saveProgress(){
   if(!state.work || jumping) return;
   const a=currentAnchor(); if(!a) return;
   try{ localStorage.setItem(progressKey(), JSON.stringify({para_id:a.id, chapter_id:a.dataset.chapter, t:Date.now()})); }catch(e){}
-}
-function readProgress(){
-  try{ const raw=localStorage.getItem(progressKey()); if(!raw) return null; const o=JSON.parse(raw); return (o && o.para_id)?o:null; }catch(e){ return null; }
 }
 
 /* ---------- 书签 ---------- */
@@ -66,33 +86,28 @@ function loadBookmarks(){
   bookmarks=new Map();
   try{ const raw=localStorage.getItem(bookmarksKey()); if(raw) for(const b of JSON.parse(raw)) if(b && b.para_id) bookmarks.set(b.para_id,b); }catch(e){}
 }
-function saveBookmarks(){
-  try{ localStorage.setItem(bookmarksKey(), JSON.stringify([...bookmarks.values()])); }catch(e){ showError('书签保存失败（浏览器存储不可用）'); }
-}
+function saveBookmarks(){ try{ localStorage.setItem(bookmarksKey(), JSON.stringify([...bookmarks.values()])); }catch(e){ showError('书签保存失败：浏览器存储不可用或已满'); } }
+function sortedBookmarks(){ return [...bookmarks.values()].sort((a,b)=>a.para_id<b.para_id?-1:(a.para_id>b.para_id?1:0)); }
 function toggleBookmark(pid){
   if(bookmarks.has(pid)) bookmarks.delete(pid);
   else {
     const p=paraById.get(pid); if(!p) return;
-    const ci=chapterPos.get(p.chapter_id);
-    const c=ci===undefined?null:state.work.chapters[ci];
-    bookmarks.set(pid, {
-      para_id:pid, chapter_id:p.chapter_id,
+    const ci=chapterPos.get(p.chapter_id); const c=ci===undefined?null:state.work.chapters[ci];
+    bookmarks.set(pid,{ para_id:pid, chapter_id:p.chapter_id,
       chapter_zh:(c&&c.title_zh)||'', chapter_ja:(c&&c.title_ja)||'',
-      ja:(p.ja||'').slice(0,60), zh:(p.zh||'').slice(0,60), t:Date.now()
-    });
+      ja:(p.ja||'').slice(0,60), zh:(p.zh||'').slice(0,60), t:Date.now() });
   }
   saveBookmarks();
   const btn=reader.querySelector(`.bm-btn[data-bm="${pid}"]`);
-  if(btn){ const on=bookmarks.has(pid); btn.classList.toggle('on',on); btn.textContent=on?'★':'☆'; }
+  if(btn){ const on_=bookmarks.has(pid); btn.classList.toggle('on',on_); btn.textContent=on_?'★':'☆'; }
   renderBookmarks();
 }
-function sortedBookmarks(){ return [...bookmarks.values()].sort((a,b)=>a.para_id<b.para_id?-1:(a.para_id>b.para_id?1:0)); }
 function renderBookmarks(){
   if(!bookmarkList) return;
-  const q=(sideSearch.value||'').trim();
+  const q=(sideSearch?sideSearch.value:'').trim();
   const items=sortedBookmarks().filter(b=>!q || (b.zh||'').includes(q) || (b.ja||'').includes(q) || (b.chapter_zh||'').includes(q) || (b.chapter_ja||'').includes(q));
   if(bmCount) bmCount.textContent=String(bookmarks.size);
-  if(!items.length){ bookmarkList.innerHTML=`<div class="bm-empty">${bookmarks.size? '没有匹配的书签':'还没有书签。<br>把鼠标移到任意段落上，点右上角的 ☆ 即可收藏。'}</div>`; return; }
+  if(!items.length){ bookmarkList.innerHTML=`<div class="bm-empty">${bookmarks.size?'没有匹配的书签':'还没有书签。<br>鼠标移到段落上点右上角的 ☆，或直接按 <kbd>b</kbd>。'}</div>`; return; }
   bookmarkList.innerHTML=items.map(b=>`<div class="bm-item"><button class="bm-jump" data-para="${b.para_id}"><div class="bm-line">${escapeHtml(b.chapter_zh||b.chapter_ja||b.chapter_id)}</div><div class="bm-line ja">${escapeHtml(b.ja||'')}</div><div class="bm-line">${escapeHtml(b.zh||'')}</div></button><button class="bm-remove" data-para="${b.para_id}" title="移除书签">×</button></div>`).join('');
 }
 function setTab(name){
@@ -106,12 +121,10 @@ function setTab(name){
 
 /* ---------- 渲染 ---------- */
 function paraHtml(p){
-  const isChapter=chapterStart.has(p.id);
-  const on=bookmarks.has(p.id);
-  return `<section class="para${isChapter?' chapter-heading':''}" id="${p.id}" data-chapter="${p.chapter_id}"><button class="bm-btn${on?' on':''}" type="button" data-bm="${p.id}" title="收藏此段">${on?'★':'☆'}</button><div class="texts"><div class="ja" lang="ja">${p.ja_ruby_html || escapeHtml(p.ja)}</div><div class="zh" lang="zh-CN">${escapeHtml(p.zh || '')}</div></div></section>`;
+  const isChapter=chapterStart.has(p.id), on_=bookmarks.has(p.id);
+  return `<section class="para${isChapter?' chapter-heading':''}" id="${p.id}" data-chapter="${p.chapter_id}"><button class="bm-btn${on_?' on':''}" type="button" data-bm="${p.id}" title="收藏此段">${on_?'★':'☆'}</button><div class="texts"><div class="ja" lang="ja">${p.ja_ruby_html || escapeHtml(p.ja)}</div><div class="zh" lang="zh-CN">${escapeHtml(p.zh || '')}</div></div></section>`;
 }
-function chapterHtml(i){ const c=state.work.chapters[i]; if(!c) return ''; const paras=byChapter.get(c.chapter_id)||[]; return paras.map(paraHtml).join(''); }
-
+function chapterHtml(i){ const c=state.work.chapters[i]; if(!c) return ''; return (byChapter.get(c.chapter_id)||[]).map(paraHtml).join(''); }
 function renderRange(start,end){
   const total=state.work.chapters.length;
   start=Math.max(0,Math.min(start,total-1));
@@ -127,8 +140,7 @@ function appendNext(){
   const n=Math.min(CHUNK, state.work.chapters.length-winEnd);
   let html=''; for(let i=winEnd;i<winEnd+n;i++) html+=chapterHtml(i);
   reader.insertAdjacentHTML('beforeend', html);
-  winEnd+=n;
-  trimFront();
+  winEnd+=n; trimFront();
 }
 function prependPrev(){
   if(winStart<=0) return;
@@ -151,10 +163,7 @@ function trimFront(){
     scrollTo(0, Math.max(0, window.scrollY - (before-after)));
   }
 }
-function fillViewport(){
-  let guard=0;
-  while(document.documentElement.scrollHeight < window.innerHeight*2 && winEnd<state.work.chapters.length && guard++<40) appendNext();
-}
+function fillViewport(){ let g=0; while(document.documentElement.scrollHeight<window.innerHeight*2 && winEnd<state.work.chapters.length && g++<40) appendNext(); }
 
 /* ---------- 侧栏 ---------- */
 function renderChapters(filter=''){
@@ -170,14 +179,10 @@ function renderChapters(filter=''){
 function chapterLabel(c){ const ja=c.title_ja||c.chapter_id, zh=c.title_zh||''; return zh?`${ja} ｜ ${zh}`:ja; }
 function fillChapters(){ chapterSelect.innerHTML=state.work.chapters.map(c=>`<option value="${c.chapter_id}">${escapeHtml(chapterLabel(c))}</option>`).join(''); }
 function renderWork(){
-  prepareWork();
-  loadBookmarks();
-  fillChapters();
-  renderChapters(sideSearch?sideSearch.value:'');
-  renderBookmarks();
-  applyLayout();
-  reader.classList.toggle('hide-ruby', !rubyToggle.checked);
-  if(!restoreProgress()) renderRange(0, CHUNK);
+  prepareWork(); loadBookmarks();
+  fillChapters(); renderChapters(sideSearch?sideSearch.value:''); renderBookmarks();
+  applyLayout(); reader.classList.toggle('hide-ruby', !rubyToggle.checked);
+  if(!applyHash() && !restoreProgress()) renderRange(0, CHUNK);
 }
 async function selectWork(workId){
   const entry=state.index.works.find(w=>w.work_id===workId);
@@ -188,9 +193,8 @@ async function selectWork(workId){
 
 /* ---------- 跳转：瞬时定位 + 稳定后恢复自动加载 ---------- */
 function scrollToPara(el){ if(el) scrollTo(0, Math.max(0, el.getBoundingClientRect().top + window.scrollY - 70)); }
-/* 跳转后必须等滚动位置稳定再解除 jumping：
-   否则 onScroll 会把「窗口起点靠近页面顶部」误判成用户滚到顶而触发 prependPrev，
-   连带补偿滚动，结果是点第 10 话却跳到第 12 话。 */
+/* 跳转后必须等滚动位置稳定再解除 jumping：否则 onScroll 会把「窗口起点靠近页面顶部」
+   误判成用户滚到顶而触发 prependPrev，连带补偿滚动，导致落点偏移。 */
 function releaseJumpWhenStable(){
   let last=-1, stable=0, frames=0;
   (function check(){
@@ -201,15 +205,15 @@ function releaseJumpWhenStable(){
     requestAnimationFrame(check);
   })();
 }
+function setHash(id){ try{ history.replaceState(null,'','#'+id); }catch(e){ /* file:// 下可能被拒，忽略 */ } }
 function jumpTo(chapterId, paraId, close){
-  const i=chapterPos.get(chapterId);
-  if(i===undefined) return;
+  const i=chapterPos.get(chapterId); if(i===undefined) return;
   jumping=true;
   renderRange(i, i+CHUNK);
-  chapterSelect.value=chapterId;
-  state.currentChapter=chapterId;
+  chapterSelect.value=chapterId; state.currentChapter=chapterId;
   scrollToPara((paraId && document.getElementById(paraId)) || reader.querySelector('.para'));
   if(close) closeSidebar();
+  setHash(paraId||chapterId);
   releaseJumpWhenStable();
 }
 function restoreProgress(){
@@ -217,18 +221,23 @@ function restoreProgress(){
   const i=chapterPos.get(data.chapter_id); if(i===undefined) return false;
   jumping=true;
   renderRange(i, i+CHUNK);
-  chapterSelect.value=data.chapter_id;
-  state.currentChapter=data.chapter_id;
+  chapterSelect.value=data.chapter_id; state.currentChapter=data.chapter_id;
   scrollToPara(document.getElementById(data.para_id));
   releaseJumpWhenStable();
   return true;
 }
-function jumpChapter(delta){ const i=chapterSelect.selectedIndex+delta; if(i>=0 && i<chapterSelect.options.length){ chapterSelect.selectedIndex=i; jumpTo(chapterSelect.value,null,false); } }
+function applyHash(){
+  let h=''; try{ h=decodeURIComponent(location.hash.slice(1)); }catch(e){ h=location.hash.slice(1); }
+  if(!h) return false;
+  if(paraById.has(h)){ const p=paraById.get(h); jumpTo(p.chapter_id,p.id,false); return true; }
+  if(chapterPos.has(h)){ jumpTo(h,null,false); return true; }
+  return false;
+}
+function jumpChapter(delta){ const i=chapterSelect.selectedIndex+delta; if(i>=0&&i<chapterSelect.options.length){ chapterSelect.selectedIndex=i; jumpTo(chapterSelect.value,null,false); } }
 function doSearch(){
   const q=searchBox.value.trim(); if(!q) return;
   const hit=state.work.paragraphs.find(p=>(p.ja&&p.ja.includes(q))||(p.zh&&p.zh.includes(q)));
   if(!hit){ showError(`未找到「${q}」`); return; }
-  clearError();
   jumpTo(hit.chapter_id, hit.id, false);
   requestAnimationFrame(()=>{ const el=document.getElementById(hit.id); if(el){ el.classList.add('active'); setTimeout(()=>el.classList.remove('active'),1800); } });
 }
@@ -242,8 +251,10 @@ function updateActiveChapter(){
   const active=chapterList.querySelector('.chapter-item.active');
   if(active && !sidebar.classList.contains('open') && window.innerWidth>900) active.scrollIntoView({block:'nearest'});
 }
-function openSidebar(){ sidebar.classList.add('open'); overlay.classList.add('show'); } function closeSidebar(){ sidebar.classList.remove('open'); overlay.classList.remove('show'); }
+function openSidebar(){ sidebar.classList.add('open'); overlay.classList.add('show'); }
+function closeSidebar(){ sidebar.classList.remove('open'); overlay.classList.remove('show'); }
 
+/* ---------- 滚动 ---------- */
 function onScroll(){
   if(!state.work || jumping) return;
   const doc=document.documentElement;
@@ -256,16 +267,108 @@ function onScroll(){
 }
 window.addEventListener('scroll',()=>{ if(ticking) return; ticking=true; requestAnimationFrame(()=>{ ticking=false; onScroll(); }); },{passive:true});
 window.addEventListener('resize',()=>{ applyLayout(); if(window.innerWidth>900) closeSidebar(); });
+window.addEventListener('hashchange',()=>{ if(state.work) applyHash(); });
+
+/* ---------- 下载 / 备份 ---------- */
+function stamp(){ const d=new Date(), p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`; }
+function fileBase(){ return state.work.reader_name || state.work.work_id; }
+function download(filename, text, mime){
+  try{
+    const blob=new Blob([text],{type:(mime||'text/plain')+';charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); },0);
+    showError('已导出：'+filename);
+  }catch(e){ showError('导出失败：'+e.message); }
+}
+function exportBackup(){
+  const data={ type:'bilingual-reader-backup', version:1, exported_at:new Date().toISOString(),
+    works:{ [state.work.work_id]: { title:fileBase(), progress:readProgress(), bookmarks:sortedBookmarks() } } };
+  download(`阅读备份-${fileBase()}-${stamp()}.json`, JSON.stringify(data,null,2), 'application/json');
+}
+function importBackup(file){
+  const fr=new FileReader();
+  fr.onload=()=>{
+    try{
+      const data=JSON.parse(fr.result);
+      if(!data || data.type!=='bilingual-reader-backup') throw new Error('不是本阅读器导出的备份文件');
+      const w=(data.works||{})[state.work.work_id];
+      if(!w) throw new Error('备份里没有当前作品（'+fileBase()+'）的数据');
+      const valid=[], invalid=[];
+      for(const b of (w.bookmarks||[])) (b && paraById.has(b.para_id) ? valid : invalid).push(b);
+      const fresh=valid.filter(b=>!bookmarks.has(b.para_id));
+      const cur=readProgress();
+      const progNewer = !!w.progress && (!cur || (w.progress.t||0) > (cur.t||0));
+      const msg=`来自《${w.title||state.work.work_id}》的备份\n\n`
+        +`书签：共 ${valid.length} 条，新增 ${fresh.length} 条，已存在 ${valid.length-fresh.length} 条`
+        +(invalid.length?`，无效（段落不存在）${invalid.length} 条`:'')+`\n`
+        +`进度：${w.progress ? (progNewer ? '将更新到 '+w.progress.chapter_id : '本地记录更新，保留本地') : '备份中没有进度'}\n\n`
+        +`确定导入吗？`;
+      if(!confirm(msg)) return;
+      for(const b of valid) if(!bookmarks.has(b.para_id)) bookmarks.set(b.para_id,b);
+      saveBookmarks();
+      if(progNewer) try{ localStorage.setItem(progressKey(), JSON.stringify(w.progress)); }catch(e){}
+      renderRange(winStart, winEnd); renderBookmarks();
+      alert(`导入完成：新增 ${fresh.length} 条书签`);
+    }catch(e){ showError('导入失败：'+e.message); }
+  };
+  fr.onerror=()=>showError('读取文件失败');
+  fr.readAsText(file);
+}
+
+/* ---------- 导出译文 ---------- */
+function exportContent(kind){
+  const out=[];
+  if(kind==='md') out.push(`# ${fileBase()}\n`);
+  for(const c of state.work.chapters){
+    const paras=byChapter.get(c.chapter_id)||[]; if(!paras.length) continue;
+    const title=c.title_zh||c.title_ja||c.chapter_id;
+    out.push(kind==='md' ? `\n## ${title}\n` : `\n【${title}】\n`);
+    for(const p of paras){
+      if(kind==='md' && p.ja) out.push('> '+p.ja.replace(/\n/g,'\n> ')+'\n');
+      out.push((p.zh||'')+'\n');
+    }
+  }
+  const text=out.join('\n');
+  if(kind==='md') download(`${fileBase()}-双语对照-${stamp()}.md`, text, 'text/markdown');
+  else download(`${fileBase()}-译文-${stamp()}.txt`, text, 'text/plain');
+}
+
+/* ---------- 菜单与帮助 ---------- */
+function openMenu(){ if(moreMenu) moreMenu.classList.add('show'); }
+function closeMenu(){ if(moreMenu) moreMenu.classList.remove('show'); }
+function toggleMenu(){ if(moreMenu) moreMenu.classList.toggle('show'); }
+function openHelp(){ helpOpen=true; if(helpLayer) helpLayer.classList.add('show'); }
+function closeHelp(){ helpOpen=false; if(helpLayer) helpLayer.classList.remove('show'); }
+
+/* ---------- 键盘 ---------- */
+function onKey(e){
+  const tag=((e.target && e.target.tagName) || '').toLowerCase();
+  const typing = tag==='input' || tag==='textarea' || tag==='select';
+  if(typing){ if(e.key==='Escape'){ e.target.blur(); closeMenu(); } return; }
+  if((e.ctrlKey||e.metaKey) && (e.key==='f'||e.key==='F')){ e.preventDefault(); if(searchBox) searchBox.focus(); return; }
+  if(e.ctrlKey||e.metaKey||e.altKey) return;
+  switch(e.key){
+    case 'ArrowLeft': e.preventDefault(); jumpChapter(-1); break;
+    case 'ArrowRight': e.preventDefault(); jumpChapter(1); break;
+    case ' ': e.preventDefault(); window.scrollBy(0,(e.shiftKey?-1:1)*Math.max(200,window.innerHeight-140)); break;
+    case 'Home': e.preventDefault(); if(state.currentChapter) jumpTo(state.currentChapter,null,false); break;
+    case 'b': case 'B': { const a=currentAnchor(); if(a) toggleBookmark(a.id); break; }
+    case '/': e.preventDefault(); if(searchBox) searchBox.focus(); break;
+    case '?': e.preventDefault(); if(helpOpen) closeHelp(); else openHelp(); break;
+    case 'Escape': closeMenu(); closeHelp(); closeSidebar(); break;
+  }
+}
 
 /* ---------- 事件 ---------- */
-function on(el,ev,fn){ if(el) el.addEventListener(ev,fn); }
-function byId(id){ return document.getElementById(id); }
 reader.addEventListener('click',e=>{ const b=e.target.closest('.bm-btn'); if(b){ e.preventDefault(); toggleBookmark(b.dataset.bm); } });
 if(bookmarkList) bookmarkList.addEventListener('click',e=>{
   const rm=e.target.closest('.bm-remove');
   if(rm){ e.preventDefault(); bookmarks.delete(rm.dataset.para); saveBookmarks(); const btn=reader.querySelector(`.bm-btn[data-bm="${rm.dataset.para}"]`); if(btn){ btn.classList.remove('on'); btn.textContent='☆'; } renderBookmarks(); return; }
   const jp=e.target.closest('.bm-jump');
-  if(jp){ e.preventDefault(); const p=paraById.get(jp.dataset.para); if(p) jumpTo(p.chapter_id, p.id, true); }
+  if(jp){ e.preventDefault(); const p=paraById.get(jp.dataset.para); if(p) jumpTo(p.chapter_id,p.id,true); }
 });
 document.querySelectorAll('.side-tabs button').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
 document.querySelectorAll('[data-layout]').forEach(btn=>btn.addEventListener('click',()=>setLayout(btn.dataset.layout)));
@@ -278,9 +381,20 @@ on(byId('prevChapter'),'click',()=>jumpChapter(-1));
 on(byId('nextChapter'),'click',()=>jumpChapter(1));
 on(byId('menuToggle'),'click',openSidebar);
 on(overlay,'click',closeSidebar);
-on(darkToggle,'click',()=>{ state.dark=!state.dark; applyPrefs(); });
+on(darkToggle,'click',cycleTheme);
 on(fontMinus,'click',()=>{ state.fontScale=Math.max(-3,state.fontScale-1); applyPrefs(); });
 on(fontPlus,'click',()=>{ state.fontScale=Math.min(6,state.fontScale+1); applyPrefs(); });
+on(moreBtn,'click',e=>{ e.stopPropagation(); toggleMenu(); });
+document.addEventListener('click',e=>{ if(!e.target.closest('#moreMenu') && !e.target.closest('#moreBtn')) closeMenu(); });
+on(byId('expBackup'),'click',()=>{ closeMenu(); exportBackup(); });
+on(byId('impBackup'),'click',()=>{ closeMenu(); if(importFile) importFile.click(); });
+on(importFile,'change',()=>{ const f=importFile.files && importFile.files[0]; if(f) importBackup(f); importFile.value=''; });
+on(byId('expZh'),'click',()=>{ closeMenu(); exportContent('zh'); });
+on(byId('expMd'),'click',()=>{ closeMenu(); exportContent('md'); });
+on(byId('showHelp'),'click',()=>{ closeMenu(); openHelp(); });
+on(byId('helpClose'),'click',closeHelp);
+on(helpLayer,'click',e=>{ if(e.target===helpLayer) closeHelp(); });
+document.addEventListener('keydown',onKey);
 
 (async function init(){
   applyPrefs();
