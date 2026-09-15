@@ -22,7 +22,19 @@ function showError(msg){ if(statusEl){ statusEl.textContent=msg; statusEl.classL
 function clearError(){ if(statusEl){ statusEl.classList.remove('show'); statusEl.textContent=''; } }
 
 function applyPrefs(){ document.body.classList.toggle('dark',state.dark); document.documentElement.style.setProperty('--reader-font', `${17 + state.fontScale}px`); if(darkToggle) darkToggle.textContent=state.dark?'亮':'暗'; localStorage.setItem('reader.fontScale',String(state.fontScale)); localStorage.setItem('reader.dark',state.dark?'1':'0'); }
-function setLayout(layout){ state.layout=layout; localStorage.setItem("reader.layout",layout); reader.className=`reader layout-${layout}`; document.querySelectorAll("[data-layout]").forEach(b=>b.classList.toggle("active",b.dataset.layout===layout)); }
+/* 窄屏（<=720px）左右对照无法阅读，自动退化为上下排版，
+   并把按钮状态改成真实生效的布局——否则会出现"选中左右、实际显示上下"的错位。 */
+const FORCE_STACK_WIDTH = 720;
+function effectiveLayout(){ return (state.layout==='side' && window.innerWidth<=FORCE_STACK_WIDTH) ? 'stack' : state.layout; }
+function applyLayout(){
+  const eff=effectiveLayout(), narrow=window.innerWidth<=FORCE_STACK_WIDTH;
+  reader.className=`reader layout-${eff}`;
+  document.querySelectorAll('[data-layout]').forEach(b=>{
+    b.classList.toggle('active', b.dataset.layout===eff);
+    if(b.dataset.layout==='side'){ b.disabled=narrow; b.title=narrow?'屏幕过窄，已自动使用竖排':'左右对照'; }
+  });
+}
+function setLayout(layout){ state.layout=layout; localStorage.setItem("reader.layout",layout); applyLayout(); }
 
 /* ---------- 索引 ---------- */
 function prepareWork(){
@@ -163,7 +175,7 @@ function renderWork(){
   fillChapters();
   renderChapters(sideSearch?sideSearch.value:'');
   renderBookmarks();
-  setLayout(state.layout);
+  applyLayout();
   reader.classList.toggle('hide-ruby', !rubyToggle.checked);
   if(!restoreProgress()) renderRange(0, CHUNK);
 }
@@ -243,7 +255,7 @@ function onScroll(){
   clearTimeout(window.__saveTimer); window.__saveTimer=setTimeout(saveProgress,400);
 }
 window.addEventListener('scroll',()=>{ if(ticking) return; ticking=true; requestAnimationFrame(()=>{ ticking=false; onScroll(); }); },{passive:true});
-window.addEventListener('resize',()=>{ if(window.innerWidth>900) closeSidebar(); });
+window.addEventListener('resize',()=>{ applyLayout(); if(window.innerWidth>900) closeSidebar(); });
 
 /* ---------- 事件 ---------- */
 function on(el,ev,fn){ if(el) el.addEventListener(ev,fn); }
