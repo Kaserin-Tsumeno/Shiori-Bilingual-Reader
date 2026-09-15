@@ -142,25 +142,32 @@ function appendNext(){
   reader.insertAdjacentHTML('beforeend', html);
   winEnd+=n; trimFront();
 }
+/* 增删章节时用「锚点元素」校正滚动，而不是推算高度差：
+   高度差会与浏览器的 scroll anchoring 叠加，导致补偿两次、视口跑到别处。 */
+function adjustScrollToKeep(anchor, topBefore){
+  if(!anchor || topBefore===null || topBefore===undefined) return;
+  const delta=anchor.getBoundingClientRect().top-topBefore;
+  if(Math.abs(delta)>1) scrollTo(0, Math.max(0, window.scrollY+delta));
+}
 function prependPrev(){
   if(winStart<=0) return;
   const n=Math.min(CHUNK, winStart), from=winStart-n;
   let html=''; for(let i=from;i<winStart;i++) html+=chapterHtml(i);
-  const before=document.documentElement.scrollHeight;
+  const anchor=currentAnchor();
+  const topBefore=anchor?anchor.getBoundingClientRect().top:null;
   reader.insertAdjacentHTML('afterbegin', html);
-  const after=document.documentElement.scrollHeight;
   winStart=from;
-  scrollTo(0, Math.max(0, window.scrollY + (after-before)));
+  adjustScrollToKeep(anchor, topBefore);
 }
 function trimFront(){
   while(winEnd-winStart>MAX_WINDOW){
     const cid=state.work.chapters[winStart].chapter_id;
     const nodes=reader.querySelectorAll(`[data-chapter="${cid}"]`);
-    const before=document.documentElement.scrollHeight;
+    const anchor=currentAnchor();
+    const topBefore=anchor?anchor.getBoundingClientRect().top:null;
     nodes.forEach(n=>n.remove());
-    const after=document.documentElement.scrollHeight;
     winStart++;
-    scrollTo(0, Math.max(0, window.scrollY - (before-after)));
+    adjustScrollToKeep(anchor, topBefore);
   }
 }
 function fillViewport(){ let g=0; while(document.documentElement.scrollHeight<window.innerHeight*2 && winEnd<state.work.chapters.length && g++<40) appendNext(); }
@@ -250,8 +257,14 @@ function updateActiveChapter(){
   state.currentChapter=current;
   if(chapterSelect.value!==current) chapterSelect.value=current;
   chapterList.querySelectorAll('.chapter-item').forEach(b=>b.classList.toggle('active', b.dataset.chapter===current));
+  /* 只滚动侧栏容器本身：scrollIntoView 会连带滚动外层（页面），
+     表现为"正文莫名其妙跳走"。 */
   const active=chapterList.querySelector('.chapter-item.active');
-  if(active && !sidebar.classList.contains('open') && window.innerWidth>900) active.scrollIntoView({block:'nearest'});
+  if(active && !sidebar.classList.contains('open') && window.innerWidth>900){
+    const lr=chapterList.getBoundingClientRect(), ar=active.getBoundingClientRect();
+    if(ar.top<lr.top) chapterList.scrollTop += ar.top-lr.top;
+    else if(ar.bottom>lr.bottom) chapterList.scrollTop += ar.bottom-lr.bottom;
+  }
 }
 function openSidebar(){ sidebar.classList.add('open'); overlay.classList.add('show'); }
 function closeSidebar(){ sidebar.classList.remove('open'); overlay.classList.remove('show'); }
