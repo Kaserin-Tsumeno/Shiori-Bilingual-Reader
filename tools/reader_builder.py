@@ -56,15 +56,6 @@ TEMPLATE = '''<!doctype html>
       <button id="nextChapter">下一章</button>
       <div class="menu-wrap">
         <button id="moreBtn" type="button" title="更多">⋯</button>
-        <div id="moreMenu" class="menu" role="menu">
-          <button type="button" id="expBackup">导出备份（书签 / 进度）</button>
-          <button type="button" id="impBackup">导入备份…</button>
-          <hr>
-          <button type="button" id="expZh">导出译文（TXT）</button>
-          <button type="button" id="expMd">导出双语对照（Markdown）</button>
-          <hr>
-          <button type="button" id="showHelp">键盘快捷键</button>
-        </div>
       </div>
       <input id="importFile" type="file" accept=".json,application/json" hidden>
       <div class="progress-track" id="progressTrack" title="全书阅读进度（点击或拖动可跳转）"><div class="progress-fill" id="progressFill"></div></div>
@@ -72,6 +63,17 @@ TEMPLATE = '''<!doctype html>
     <aside id="status"></aside>
     <main id="reader" class="reader layout-side"><div class="loading-hint">正在加载…</div></main>
   </section>
+</div>
+<!-- 菜单必须放在 .toolbar 之外：toolbar 的 backdrop-filter 会创建包含块，
+     使内部 position:fixed 相对工具栏而非视口定位（手机底部抽屉会错位）。 -->
+<div id="moreMenu" class="menu" role="menu">
+  <button type="button" id="expBackup">导出备份（书签 / 进度）</button>
+  <button type="button" id="impBackup">导入备份…</button>
+  <hr>
+  <button type="button" id="expZh">导出译文（TXT）</button>
+  <button type="button" id="expMd">导出双语对照（Markdown）</button>
+  <hr>
+  <button type="button" id="showHelp">键盘快捷键</button>
 </div>
 <div id="helpLayer" class="help">
   <div class="help-card">
