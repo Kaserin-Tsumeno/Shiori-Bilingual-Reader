@@ -49,13 +49,16 @@ $env:DEEPSEEK_API_KEY = "sk-..."
 py -3.11 tools\init_work.py `
   --source sources\my-novel.txt `
   --work-id my-novel `
-  --title "我的小说标题"
+  --title "我的小说标题" `
+  --reader-name "my-novel-双语"
 ```
 
 它会：
 - 按**空行**切分段落，分配稳定 id（`p00001`、`p00002`…）
 - 识别以「第N話」开头的行作为**章节标题**，分配 `c0001`…
-- 生成 `works/my-novel.json`（段落 + 章节骨架）、`works/index.json`、`reader.html`
+- 生成 `works/my-novel.json`（段落 + 章节骨架）、`works/index.json`
+- 生成阅读器 **`my-novel-双语.html`**（文件名取自 `--reader-name`；
+  省略该参数则用 `--work-id`）。每次重新合并都会重建这个文件
 
 ### 第 2 步：（可选但推荐）配置术语表
 

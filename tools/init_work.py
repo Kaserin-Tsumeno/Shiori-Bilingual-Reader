@@ -277,6 +277,7 @@ def main() -> None:
     parser.add_argument("--work-id", required=True)
     parser.add_argument("--title", required=True)
     parser.add_argument("--chunk-size", type=int, default=80)
+    parser.add_argument("--reader-name", default=None, help="阅读器文件名（不含 .html），如 my-novel-双语；默认用 work_id")
     args = parser.parse_args()
     if args.root is None:
         args.root = Path(__file__).resolve().parent.parent
@@ -291,6 +292,8 @@ def main() -> None:
                 shutil.copy2(file, nested_translation_dir / file.name)
 
     work = build_work(args.work_id, args.title, args.source, nested_translation_dir)
+    if args.reader_name:
+        work["reader_name"] = args.reader_name
     write_reader(args.root, work)
     update_index(args.root, work)
     write_chunks(work, args.root / "chunks" / args.work_id, args.chunk_size)

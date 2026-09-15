@@ -174,8 +174,21 @@ async function selectWork(workId){
   renderWork();
 }
 
-/* ---------- 跳转：瞬时定位 + 冻结自动加载（修复“一直滚且卡顿”） ---------- */
+/* ---------- 跳转：瞬时定位 + 稳定后恢复自动加载 ---------- */
 function scrollToPara(el){ if(el) scrollTo(0, Math.max(0, el.getBoundingClientRect().top + window.scrollY - 70)); }
+/* 跳转后必须等滚动位置稳定再解除 jumping：
+   否则 onScroll 会把「窗口起点靠近页面顶部」误判成用户滚到顶而触发 prependPrev，
+   连带补偿滚动，结果是点第 10 话却跳到第 12 话。 */
+function releaseJumpWhenStable(){
+  let last=-1, stable=0, frames=0;
+  (function check(){
+    frames++;
+    const y=Math.round(window.scrollY);
+    if(y===last) stable++; else { stable=0; last=y; }
+    if((stable>=2 && frames>4) || frames>150){ jumping=false; return; }
+    requestAnimationFrame(check);
+  })();
+}
 function jumpTo(chapterId, paraId, close){
   const i=chapterPos.get(chapterId);
   if(i===undefined) return;
@@ -185,7 +198,7 @@ function jumpTo(chapterId, paraId, close){
   state.currentChapter=chapterId;
   scrollToPara((paraId && document.getElementById(paraId)) || reader.querySelector('.para'));
   if(close) closeSidebar();
-  requestAnimationFrame(()=>{ jumping=false; });
+  releaseJumpWhenStable();
 }
 function restoreProgress(){
   const data=readProgress(); if(!data) return false;
@@ -195,7 +208,7 @@ function restoreProgress(){
   chapterSelect.value=data.chapter_id;
   state.currentChapter=data.chapter_id;
   scrollToPara(document.getElementById(data.para_id));
-  requestAnimationFrame(()=>{ jumping=false; });
+  releaseJumpWhenStable();
   return true;
 }
 function jumpChapter(delta){ const i=chapterSelect.selectedIndex+delta; if(i>=0 && i<chapterSelect.options.length){ chapterSelect.selectedIndex=i; jumpTo(chapterSelect.value,null,false); } }

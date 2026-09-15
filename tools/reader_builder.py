@@ -90,5 +90,21 @@ def build_reader_html(root: Path, work: dict) -> str:
     return TEMPLATE.format(css=css, js=js, index_json=index_json, works_json=works_json)
 
 
-def write_reader(root: Path, work: dict) -> None:
-    (root / "reader.html").write_text(build_reader_html(root, work), encoding="utf-8", newline="\n")
+def reader_filename(work: dict) -> str:
+    """阅读器文件名：优先用作品自定的 reader_name，否则退回 work_id。
+
+    例如 reader_name = "my-novel-双语" → 生成 "my-novel-双语.html"
+    """
+    name = str(work.get("reader_name") or work.get("work_id") or "reader").strip()
+    for ch in '\\/:*?"<>|':          # 去掉 Windows 文件名非法字符
+        name = name.replace(ch, "-")
+    return f"{name}.html"
+
+
+def write_reader(root: Path, work: dict) -> Path:
+    path = root / reader_filename(work)
+    path.write_text(build_reader_html(root, work), encoding="utf-8", newline="\n")
+    legacy = root / "reader.html"
+    if legacy != path:               # 清理旧入口，避免"打开的不是最新文件"
+        legacy.unlink(missing_ok=True)
+    return path
