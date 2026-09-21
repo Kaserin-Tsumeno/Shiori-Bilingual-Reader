@@ -128,6 +128,50 @@ $env:SHIORI_LIBRARY = "E:\我的书库"
 
 ---
 
+---
+
+## 一次翻很多本（无人值守）
+
+```powershell
+# ① 把原稿扔进收件箱
+#    library\_inbox\my-novel.txt      ← 文件名即 work_id（英文/拼音/短横线）
+#    library\_inbox\中文书名.txt      ← 中文名会自动分配 book-01、book-02…
+#    可在首行写「# 中文标题」指定作品标题
+
+# ② 自动建档：推断语言与标题、切块，并让模型抽取术语表
+py -3.11 tools\import_books.py --auto-terms
+
+# ③ 启动后离开键盘
+py -3.11 tools\batch_run.py --auto --concurrency 16
+
+# ④ 回来看报告
+library\_报告.md
+```
+
+`batch_run.py` 逐本判断进度（建档 → 切块 → 生产 → 合并 → 出书），
+**某本失败只跳过它、继续下一本**，最后汇总成功/失败清单。
+随时中断，重跑同一条命令即续。
+
+跑完回收空间（可再生产物可随时由 work.json 重建）：
+
+```powershell
+py -3.11 tools\finish_work.py --all --level report    # 先看占用
+py -3.11 tools\finish_work.py --all --level clean     # 清理，约省一半空间
+```
+
+### 关于"机器替你做的判断"
+
+术语表和读音表由模型自动抽取/裁决并**直接生效**，流程不会停下来等人确认——
+这是为了 20 本书能真正无人值守。所有判断都会写进报告，供你事后抽查：
+
+| 判断 | 位置 |
+|---|---|
+| 抽了哪些术语 | `library/<书>/glossary.json`（报告里列出"不确定"项） |
+| 读音冲突怎么裁决的 | `library/<书>/readings.verdicts.json`（含理由） |
+| 模型没定、回退取最高频的 | 报告里单列 |
+
+改表后重跑该作品即可生效。
+
 ## 阅读器怎么用
 
 | 想做什么 | 怎么做 |
@@ -160,6 +204,11 @@ $env:SHIORI_LIBRARY = "E:\我的书库"
 | `harvest_readings.py --work-id X` | 汇总全书读音，揪出"同词不同读"的人名 |
 | `audit_source_and_ruby.py --work-id X` | 核查原稿有没有漏段 |
 | `migrate_work.py --source <旧json> --work-id X` | 把旧格式作品迁到新结构 |
+| `import_books.py --auto-terms` | 批量导入收件箱里的原稿并自动建档 |
+| `batch_run.py --auto` | 批量调度：把书库里所有作品推到完成 |
+| `finish_work.py --all --level clean` | 收尾：回收可再生产物占用的空间 |
+| `auto_terms.py --work-id X` | 单独重跑术语抽取 |
+| `auto_readings.py --work-id X` | 单独重跑读音裁决 |
 
 ---
 

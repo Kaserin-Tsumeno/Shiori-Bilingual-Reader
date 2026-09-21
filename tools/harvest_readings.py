@@ -35,24 +35,21 @@ def iter_pairs(html: str):
             yield base, rt
 
 
-def main() -> None:
-    sys.stdout.reconfigure(encoding="utf-8")
-    ap = argparse.ArgumentParser(description="沉淀读音候选（供审校）")
-    ap.add_argument("--work-id", default=None)
-    ap.add_argument("--min-count", type=int, default=2, help="只统计出现次数不少于该值的词，默认 2")
-    args = ap.parse_args()
+def collect_candidates(work_id: str, min_count: int = 2):
+    """统计全书「词 → 读音」，返回 (candidates, conflicts, noise)。
 
-    work_id = cfg.resolve_work_id(args.work_id)
+    candidates: {词: {"reading", "count", "confidence"?, "variants"?}}
+    conflicts:  多字词或术语表专名中出现多种读音的 —— 真正需要裁决的
+    noise:      单字多读（彼→かれ/かの 之类），是日语固有现象，不需处理
+    """
     work = json.loads(cfg.work_file(work_id).read_text(encoding="utf-8"))
-    paras = work["paragraphs"]
 
     counter: Counter[tuple[str, str]] = Counter()
-    for p in paras:
+    for p in work["paragraphs"]:
         html = schema.get_field(p, "src_annotated")
         if html:
             counter.update(iter_pairs(html))
 
-    # 按词归并读音
     by_term: dict[str, Counter[str]] = defaultdict(Counter)
     for (base, rt), n in counter.items():
         by_term[base][rt] += n
@@ -61,13 +58,10 @@ def main() -> None:
     glossary_terms = cfg.glossary(work_id)
 
     candidates: dict[str, dict] = {}
-    total_terms = 0
     for term, readings in sorted(by_term.items(), key=lambda kv: -sum(kv[1].values())):
         count = sum(readings.values())
-        if count < args.min_count:
+        if count < min_count:
             continue
-        total_terms += 1
-        # 优先项：已在读音表里 > 术语表里的专名 > 出现最多的读法
         if term in existing:
             chosen, confidence = existing[term]["reading"], existing[term].get("confidence", "")
         elif term in glossary_terms:
@@ -81,16 +75,6 @@ def main() -> None:
             item["variants"] = [f"{r}({n})" for r, n in readings.most_common()]
         candidates[term] = item
 
-    out_dir = cfg.work_dir(work_id)
-    (out_dir / "readings.candidates.json").write_text(
-        json.dumps({"_说明": "审校后删掉 _说明 并另存为 readings.json 即生效；variants 表示同一词出现过多种读音，需要人工确认",
-                    **candidates},
-                   ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-    # 只把"真正的可疑项"列为冲突：单字在不同词里读音不同是日语固有现象（彼→かれ/かの），
-    # 不构成问题；需要人工确认的是多字词，以及术语表内的单字专名。
     def is_suspicious(term: str) -> bool:
         return len(term) >= 2 or term in glossary_terms or term in existing
 
@@ -98,9 +82,33 @@ def main() -> None:
                  if v.get("variants") and is_suspicious(t)}
     noise = {t: v["variants"] for t, v in candidates.items()
              if v.get("variants") and not is_suspicious(t)}
-    lines = ["# 一词多读（优先审校）", "",
-             f"共 {len(conflicts)} 个词出现过多种读音。这些要么是错的，要么需要按语境区分。", ""]
-    for term, variants in sorted(conflicts.items(), key=lambda kv: -sum(int(x.split("(")[1].rstrip(")")) for x in kv[1])):
+    conflicts = dict(sorted(conflicts.items(),
+                            key=lambda kv: -sum(int(x.split("(")[1].rstrip(")")) for x in kv[1])))
+    return candidates, conflicts, noise, glossary_terms, existing
+
+
+def main() -> None:
+    sys.stdout.reconfigure(encoding="utf-8")
+    ap = argparse.ArgumentParser(description="沉淀读音候选（供审校或自动裁决）")
+    ap.add_argument("--work-id", default=None)
+    ap.add_argument("--min-count", type=int, default=2, help="只统计出现次数不少于该值的词，默认 2")
+    args = ap.parse_args()
+
+    work_id = cfg.resolve_work_id(args.work_id)
+    candidates, conflicts, noise, glossary_terms, existing = collect_candidates(work_id, args.min_count)
+
+    out_dir = cfg.work_dir(work_id)
+    (out_dir / "readings.candidates.json").write_text(
+        json.dumps({"_说明": "候选读音表；variants 表示同一词出现过多种读音。"
+                             "可用 auto_readings.py 让模型自动裁决，或人工审校后另存为 readings.json",
+                    **candidates},
+                   ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    lines = ["# 一词多读（需裁决）", "",
+             f"共 {len(conflicts)} 个词出现过多种读音（已排除单字多读这类正常现象）。", ""]
+    for term, variants in conflicts.items():
         mark = " ← 术语表专名" if term in glossary_terms else ""
         lines.append(f"- **{term}**{mark}：" + "、".join(variants))
     if not conflicts:
@@ -109,13 +117,13 @@ def main() -> None:
 
     print(json.dumps({
         "work_id": work_id,
-        "扫描段落": len(paras),
-        "不同词条": total_terms,
-        "一词多读（需审校）": len(conflicts),
+        "不同词条": len(candidates),
+        "一词多读（需裁决）": len(conflicts),
         "单字多读（正常现象，不列）": len(noise),
         "候选表": str(out_dir / "readings.candidates.json"),
         "冲突清单": str(out_dir / "readings.conflicts.md"),
         "已有读音表条数": len(existing),
+        "下一步": f"py -3.11 tools\\auto_readings.py --work-id {work_id}   （让模型自动裁决冲突）",
     }, ensure_ascii=False, indent=2))
     print()
     print("一词多读示例（前 15）：")

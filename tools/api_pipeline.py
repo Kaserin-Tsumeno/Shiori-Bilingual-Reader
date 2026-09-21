@@ -312,7 +312,9 @@ def main() -> None:
     ap.add_argument("--concurrency", type=int, default=12)
     ap.add_argument("--model", default=None, help="默认取 SHIORI_MODEL 或 deepseek-flash")
     ap.add_argument("--max-try", type=int, default=4)
-    ap.add_argument("--units", default=None, help="如 1-20，默认全部")
+    ap.add_argument("--units", default=None, help="只处理这些单元，如 1-20")
+    ap.add_argument("--redo-units", default=None,
+                    help="强制重做这些单元（如 12-20）：自动清除其产物与批次缓存")
     args = ap.parse_args()
 
     work = cfg.resolve_work_id(args.work_id)
@@ -349,7 +351,25 @@ def main() -> None:
             lo = hi = int(args.units)
         all_units = [u for u in all_units if lo <= u <= hi]
 
+    # 强制重做：先清掉这些单元的产物与批次缓存，否则会被当成"已完成"静默跳过
+    if args.redo_units:
+        redo: set[int] = set()
+        for part in str(args.redo_units).split(","):
+            part = part.strip()
+            if "-" in part:
+                a, b = part.split("-")
+                redo.update(range(int(a), int(b) + 1))
+            elif part:
+                redo.add(int(part))
+        for u in sorted(redo):
+            (parts_dir / f"unit_{u:04d}.jsonl").unlink(missing_ok=True)
+            for c in cache_dir.glob(f"u{u:04d}_b*.jsonl"):
+                c.unlink()
+        log(f"强制重做 {len(redo)} 个单元：{sorted(redo)[:12]}{' …' if len(redo) > 12 else ''}")
+
     todo = []
+    skipped_existing = 0
+    skipped_units: list[int] = []
     for u in all_units:
         target = parts_dir / f"unit_{u:04d}.jsonl"
         src = units_dir / f"unit_{u:04d}.jsonl"
@@ -357,10 +377,16 @@ def main() -> None:
         if target.exists():
             done_n = sum(1 for line in target.read_text(encoding="utf-8").splitlines() if line.strip())
             if done_n == src_n:
+                skipped_existing += 1
+                skipped_units.append(u)
                 continue
         todo.append(u)
 
-    log(f"作品 {work}｜总单元 {len(all_units)}，待处理 {len(todo)}，模型 {model}，并发 {args.concurrency}，批大小 {args.batch_size}，读音表 {len(READINGS)} 条，标注 {ANNOTATION}")
+    log(f"作品 {work}｜总单元 {len(all_units)}，本次待生产 {len(todo)}，模型 {model}，并发 {args.concurrency}，批大小 {args.batch_size}，读音表 {len(READINGS)} 条，标注 {ANNOTATION}")
+    if skipped_existing:
+        more = " …" if len(skipped_units) > 8 else ""
+        log(f"  已有产物跳过 {skipped_existing} 个单元（{skipped_units[:8]}{more}）；"
+            f"如需重做请加 --redo-units {skipped_units[0]}")
     if not todo:
         log("全部已完成。")
         return
@@ -424,7 +450,9 @@ def main() -> None:
                 f"累计 {counter['rows']} 段  用时 {el/60:.1f}min  预计剩余 {el/done*(len(todo)-done)/60:.1f}min"
             )
 
-    log(f"结束。完整单元 {len(todo)-len(failed)}/{len(todo)}；不完整：{failed}")
+    log(f"结束。本次新生产 {counter['rows']} 段（{len(todo)-len(failed)}/{len(todo)} 个单元完整）；不完整：{failed}")
+    if todo and counter["rows"] == 0:
+        log("  注意：本次没有产生任何新段落——若你本意是重做，请加 --redo-units 或删除 parts/ 与 cache/")
     if failed:
         (cfg.logs_dir() / f"failed_units_{work}.json").write_text(json.dumps(failed), encoding="utf-8")
 
