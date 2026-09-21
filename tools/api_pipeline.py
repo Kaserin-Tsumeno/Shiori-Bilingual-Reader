@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import kit_config as cfg  # noqa: E402
+import shiori_config as cfg  # noqa: E402
 
 TAG_RE = re.compile(r"<[^>]+>")
 RT_RE = re.compile(r"<rt[^>]*>.*?</rt>", re.I | re.S)
@@ -282,7 +282,7 @@ def main() -> None:
     ap.add_argument("--work-id", default=None, help="作品 id（也可用环境变量 WORK_ID）")
     ap.add_argument("--batch-size", type=int, default=20)
     ap.add_argument("--concurrency", type=int, default=12)
-    ap.add_argument("--model", default=None, help="默认取 KIT_MODEL 或 deepseek-flash")
+    ap.add_argument("--model", default=None, help="默认取 SHIORI_MODEL 或 deepseek-flash")
     ap.add_argument("--max-try", type=int, default=4)
     ap.add_argument("--units", default=None, help="如 1-20，默认全部")
     args = ap.parse_args()
@@ -292,7 +292,7 @@ def main() -> None:
     units_dir = cfg.units_dir(work)
     parts_dir = cfg.parts_dir(work)
     parts_dir.mkdir(parents=True, exist_ok=True)
-    cache_dir = cfg.kit_root() / "api_out" / work / "cache"
+    cache_dir = cfg.root() / "api_out" / work / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
     log = Log(cfg.logs_dir() / f"pipeline_{work}_{time.strftime('%Y%m%d_%H%M%S')}.log")
 

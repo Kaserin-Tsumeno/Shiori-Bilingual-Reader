@@ -5,14 +5,14 @@ r"""公共配置：工作根目录、作品 id、API 凭据与模型。
 所有脚本都通过本模块解析路径，因此换作品、换目录都不需要改代码。
 
 环境变量（都可选）：
-  KIT_ROOT            工作根目录，默认 = 本仓库根目录
+  SHIORI_ROOT            工作根目录，默认 = 本仓库根目录
   WORK_ID             默认作品 id（等价于各脚本的 --work-id）
-  KIT_MODEL           默认模型，默认 deepseek-flash
-  KIT_API_URL         API 端点，默认 https://api.deepseek.com/chat/completions
+  SHIORI_MODEL           默认模型，默认 deepseek-flash
+  SHIORI_API_URL         API 端点，默认 https://api.deepseek.com/chat/completions
   DEEPSEEK_API_KEY    API 密钥（优先）
   DSH_CREDENTIALS     DSH 凭据文件路径，默认 ~/.dsh/.credentials.yaml
 
-目录约定（均在 KIT_ROOT 下）：
+目录约定（均在 SHIORI_ROOT 下）：
   sources/                 原始日文稿件（txt），文件名即作品名
   config/<work_id>/glossary.json   译文术语表（强制统一译法）
   config/<work_id>/terms.json      译名统一规则（后处理替换）
@@ -30,8 +30,8 @@ import os
 from pathlib import Path
 
 
-def kit_root() -> Path:
-    env = os.environ.get("KIT_ROOT")
+def root() -> Path:
+    env = os.environ.get("SHIORI_ROOT")
     if env:
         return Path(env).expanduser().resolve()
     return Path(__file__).resolve().parent.parent
@@ -46,7 +46,7 @@ def resolve_work_id(value: str | None = None) -> str:
 
 # ---------- 目录 ----------
 def sources_dir() -> Path:
-    return kit_root() / "sources"
+    return root() / "sources"
 
 
 def source_file(work_id: str) -> Path:
@@ -65,11 +65,11 @@ def source_file(work_id: str) -> Path:
 
 
 def config_dir(work_id: str) -> Path:
-    return kit_root() / "config" / work_id
+    return root() / "config" / work_id
 
 
 def works_dir() -> Path:
-    return kit_root() / "works"
+    return root() / "works"
 
 
 def work_file(work_id: str) -> Path:
@@ -77,19 +77,19 @@ def work_file(work_id: str) -> Path:
 
 
 def chunks_dir(work_id: str) -> Path:
-    return kit_root() / "chunks" / work_id
+    return root() / "chunks" / work_id
 
 
 def units_dir(work_id: str) -> Path:
-    return kit_root() / "chunks_units" / work_id
+    return root() / "chunks_units" / work_id
 
 
 def chunks_600_dir(work_id: str) -> Path:
-    return kit_root() / "chunks_600" / work_id
+    return root() / "chunks_600" / work_id
 
 
 def trans_dir(work_id: str) -> Path:
-    return kit_root() / "translations" / work_id
+    return root() / "translations" / work_id
 
 
 def parts_dir(work_id: str) -> Path:
@@ -97,7 +97,7 @@ def parts_dir(work_id: str) -> Path:
 
 
 def logs_dir() -> Path:
-    return kit_root() / "logs"
+    return root() / "logs"
 
 
 # ---------- 配置读取 ----------
@@ -121,11 +121,11 @@ def unify_rules(work_id: str) -> list[list[str]]:
 
 # ---------- 模型与凭据 ----------
 def default_model() -> str:
-    return os.environ.get("KIT_MODEL", "deepseek-flash")
+    return os.environ.get("SHIORI_MODEL", "deepseek-flash")
 
 
 def api_url() -> str:
-    return os.environ.get("KIT_API_URL", "https://api.deepseek.com/chat/completions")
+    return os.environ.get("SHIORI_API_URL", "https://api.deepseek.com/chat/completions")
 
 
 def load_api_key() -> str:

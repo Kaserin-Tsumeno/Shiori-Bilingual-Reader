@@ -1,9 +1,9 @@
 from __future__ import annotations
 import sys as _sys
-from pathlib import Path as _KitPath
+from pathlib import Path as _ShioriPath
 
-_sys.path.insert(0, str(_KitPath(__file__).resolve().parent))
-import kit_config as cfg
+_sys.path.insert(0, str(_ShioriPath(__file__).resolve().parent))
+import shiori_config as cfg
 
 r"""最终验收报告：对作品 JSON 做交付级体检。
 
@@ -25,7 +25,7 @@ import re
 import sys
 from pathlib import Path
 
-# 工作根目录与作品 id 由 kit_config 解析（KIT_ROOT / WORK_ID / --work-id）
+# 工作根目录与作品 id 由 shiori_config 解析（SHIORI_ROOT / WORK_ID / --work-id）
 
 
 TAG_RE = re.compile(r"<[^>]+>")

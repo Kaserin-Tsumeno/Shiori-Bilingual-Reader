@@ -1,9 +1,9 @@
 from __future__ import annotations
 import sys as _sys
-from pathlib import Path as _KitPath
+from pathlib import Path as _ShioriPath
 
-_sys.path.insert(0, str(_KitPath(__file__).resolve().parent))
-import kit_config as cfg
+_sys.path.insert(0, str(_ShioriPath(__file__).resolve().parent))
+import shiori_config as cfg
 
 r"""续跑进度看板：统计哪些工作单元已产出、哪些还缺。
 
@@ -36,7 +36,7 @@ def load_ids(path: Path) -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=Path, default=None, help="工作根目录，默认 KIT_ROOT 或仓库根")
+    parser.add_argument("--root", type=Path, default=None, help="工作根目录，默认 SHIORI_ROOT 或仓库根")
     parser.add_argument("--work-id", default=None, help="作品 id（也可用环境变量 WORK_ID）")
     parser.add_argument("--list-pending", action="store_true")
     parser.add_argument("--pending-limit", type=int, default=40)

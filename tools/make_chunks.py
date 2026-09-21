@@ -1,9 +1,9 @@
 from __future__ import annotations
 import sys as _sys
-from pathlib import Path as _KitPath
+from pathlib import Path as _ShioriPath
 
-_sys.path.insert(0, str(_KitPath(__file__).resolve().parent))
-import kit_config as cfg
+_sys.path.insert(0, str(_ShioriPath(__file__).resolve().parent))
+import shiori_config as cfg
 
 """按段落区间生成续跑分块（默认 600 段一块）。
 
@@ -42,7 +42,7 @@ def load_source_rows(src_dir: Path) -> dict[str, dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=Path, default=None, help="工作根目录，默认 KIT_ROOT 或仓库根")
+    parser.add_argument("--root", type=Path, default=None, help="工作根目录，默认 SHIORI_ROOT 或仓库根")
     parser.add_argument("--work-id", default=None, help="作品 id（也可用环境变量 WORK_ID）")
     parser.add_argument("--start-id", default="p00801", help="续跑起始段落 id")
     parser.add_argument("--chunk-size", type=int, default=600)
@@ -53,7 +53,7 @@ def main() -> None:
 
     work_id = cfg.resolve_work_id(args.work_id)
     src_dir = cfg.chunks_dir(work_id)
-    out_dir = cfg.kit_root() / args.out_subdir / work_id
+    out_dir = cfg.root() / args.out_subdir / work_id
 
     rows = load_source_rows(src_dir)
     order: list[str] = rows.pop("__order__")  # type: ignore[assignment]

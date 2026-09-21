@@ -1,9 +1,9 @@
 from __future__ import annotations
 import sys as _sys
-from pathlib import Path as _KitPath
+from pathlib import Path as _ShioriPath
 
-_sys.path.insert(0, str(_KitPath(__file__).resolve().parent))
-import kit_config as cfg
+_sys.path.insert(0, str(_ShioriPath(__file__).resolve().parent))
+import shiori_config as cfg
 
 """批量校验 parts/ 下所有单元产物，输出汇总报告。
 
@@ -31,7 +31,7 @@ UNIT_RE = re.compile(r"^unit_(\d{4})")
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=Path, default=None, help="工作根目录，默认 KIT_ROOT 或仓库根")
+    parser.add_argument("--root", type=Path, default=None, help="工作根目录，默认 SHIORI_ROOT 或仓库根")
     parser.add_argument("--work-id", default=None, help="作品 id（也可用环境变量 WORK_ID）")
     parser.add_argument("--show-ok", action="store_true", help="列出通过单元的明细")
     args = parser.parse_args()

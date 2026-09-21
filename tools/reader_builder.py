@@ -36,6 +36,9 @@ TEMPLATE = '''<!doctype html>
     </div>
     <nav id="chapterList" class="chapter-list" aria-label="章节目录"></nav>
     <nav id="bookmarkList" class="chapter-list" aria-label="书签列表" hidden></nav>
+    <!-- 目录栏拖拽调宽手柄：拖动改宽度，双击恢复默认，聚焦后 ← → 微调（Shift 加速） -->
+    <div id="sidebarResizer" class="sidebar-resizer" role="separator" aria-orientation="vertical"
+         tabindex="0" aria-label="调整目录栏宽度" title="拖动调整目录宽度，双击恢复默认"></div>
   </aside>
   <section class="content">
     <header class="toolbar" id="toolbar">
@@ -88,6 +91,7 @@ TEMPLATE = '''<!doctype html>
       <tr><td><kbd>空格</kbd> / <kbd>Shift</kbd>+<kbd>空格</kbd></td><td>下翻一屏 / 上翻一屏</td></tr>
       <tr><td><kbd>Home</kbd></td><td>回到本章开头</td></tr>
       <tr><td><kbd>b</kbd></td><td>为当前段落加 / 取消书签</td></tr>
+      <tr><td><kbd>[</kbd></td><td>显示 / 隐藏目录栏</td></tr>
       <tr><td><kbd>/</kbd> 或 <kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>聚焦搜索框</td></tr>
       <tr><td><kbd>?</kbd></td><td>显示 / 关闭本帮助</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>关闭菜单 / 侧栏 / 本帮助</td></tr>
@@ -95,6 +99,9 @@ TEMPLATE = '''<!doctype html>
     <button type="button" class="help-close" id="helpClose">关闭</button>
   </div>
 </div>
+<!-- 本副本的主打作品：打开哪个文件就先显示哪部作品；
+     各副本用 reader.work.<primary> 独立记住自己上次读到哪部，互不串扰。 -->
+<script id="reader-primary" type="application/json">{primary_json}</script>
 <script id="reader-index" type="application/json">{index_json}</script>
 <script id="reader-works" type="application/json">{works_json}</script>
 <script>{js}</script>
@@ -107,6 +114,33 @@ def _load_assets(root: Path) -> tuple[str, str]:
     css = (root / "assets" / "reader.css").read_text(encoding="utf-8")
     js = (root / "assets" / "reader.js").read_text(encoding="utf-8")
     return css, js
+
+
+def _collect_works(root: Path, index: dict, current: dict) -> dict:
+    """打包阅读器内嵌的全部作品数据。
+
+    阅读器是 file:// 下双击即用的单文件，fetch 其他作品的 JSON 会被 CORS 拦。
+    因此把 index 里所有作品一并内嵌：任一副本都能读全部作品，切换作品不会
+    出现 "Failed to fetch"。代价是文件体积 = 全部作品之和。
+    """
+    order = [w.get("work_id") for w in index.get("works", [])]
+    if current["work_id"] not in order:
+        order.append(current["work_id"])
+    works: dict = {}
+    for wid in order:
+        if not wid:
+            continue
+        if wid == current["work_id"]:
+            works[wid] = current          # 内存里这份比磁盘新（刚合并过）
+            continue
+        path = root / "works" / f"{wid}.json"
+        if not path.exists():
+            continue
+        try:
+            works[wid] = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue                      # 单个作品损坏不该让整本书打不开
+    return works
 
 
 def build_reader_html(root: Path, work: dict) -> str:
@@ -122,8 +156,10 @@ def build_reader_html(root: Path, work: dict) -> str:
     css, js = _load_assets(root)
     # 转义 "</" 避免序列意外闭合 script 标签
     index_json = json.dumps(index, ensure_ascii=False).replace("</", "<\\/")
-    works_json = json.dumps({work["work_id"]: work}, ensure_ascii=False).replace("</", "<\\/")
-    return TEMPLATE.format(css=css, js=js, index_json=index_json, works_json=works_json)
+    works_json = json.dumps(_collect_works(root, index, work), ensure_ascii=False).replace("</", "<\\/")
+    primary_json = json.dumps(work["work_id"], ensure_ascii=False).replace("</", "<\\/")
+    return TEMPLATE.format(css=css, js=js, index_json=index_json,
+                           works_json=works_json, primary_json=primary_json)
 
 
 def reader_filename(work: dict) -> str:

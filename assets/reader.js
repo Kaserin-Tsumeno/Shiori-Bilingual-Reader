@@ -18,7 +18,27 @@ let _idxCache, _worksCache;
 function embeddedJson(id){ const el=document.getElementById(id); if(!el) return null; try{ return JSON.parse(el.textContent); }catch(e){ return null; } }
 function embeddedIndex(){ if(_idxCache===undefined) _idxCache=embeddedJson('reader-index'); return _idxCache; }
 function embeddedWorks(){ if(_worksCache===undefined) _worksCache=embeddedJson('reader-works'); return _worksCache; }
-async function loadJson(path){ if(path==='works/index.json'){ const d=embeddedIndex(); if(d) return d; } const works=embeddedWorks(); if(works){ const hit=Object.values(works).find(w=>'works/'+w.work_id+'.json'===path); if(hit) return hit; } const res=await fetch(path); if(!res.ok) throw new Error(path); return res.json(); }
+/* 本副本的主打作品：文件名指向的那部。打开哪个文件就先显示哪部作品。 */
+function primaryWorkId(){ const v=embeddedJson('reader-primary'); return (typeof v==='string' && v) ? v : null; }
+/* 各副本独立记住自己上次读到哪部作品，避免"A 页面打开却显示 B 作品"。 */
+function sessionKey(){ const p=primaryWorkId(); return p ? 'reader.work.'+p : 'reader.work'; }
+/* 数据优先取内嵌：单文件阅读器在 file:// 下 fetch 本地 JSON 会被 CORS 拦。
+   若内嵌未命中且 fetch 也失败，抛可识别的 work-unavailable，由调用方给出人话提示。 */
+async function loadJson(path){
+  if(path==='works/index.json'){ const d=embeddedIndex(); if(d) return d; }
+  const works=embeddedWorks();
+  if(works){ const hit=Object.values(works).find(w=>'works/'+w.work_id+'.json'===path); if(hit) return hit; }
+  try{
+    const res=await fetch(path);
+    if(!res.ok) throw new Error(res.status);
+    return await res.json();
+  }catch(e){
+    const err=new Error('该作品未打包在本文件中');
+    err.code='work-unavailable';
+    err.path=path;
+    throw err;
+  }
+}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch])).replace(/\n/g,"<br>")}
 function showError(msg){ if(statusEl){ statusEl.textContent=msg; statusEl.classList.add('show'); clearTimeout(window.__statusTimer); window.__statusTimer=setTimeout(()=>statusEl.classList.remove('show'),6000); } }
 function byId(id){ return document.getElementById(id); }
@@ -199,9 +219,19 @@ function renderWork(){
 }
 async function selectWork(workId){
   const entry=state.index.works.find(w=>w.work_id===workId);
-  state.work=await loadJson(entry.path);
-  localStorage.setItem('reader.work',workId);
+  if(!entry){ showError('找不到作品：'+workId); return false; }
+  let data;
+  try{ data=await loadJson(entry.path); }
+  catch(err){
+    if(err && err.code==='work-unavailable') showError(`「${entry.title}」没有打包在本文件中，请打开它对应的阅读器页面`);
+    else showError('加载失败：'+(err&&err.message?err.message:err));
+    if(workSelect && state.work) workSelect.value=state.work.work_id;
+    return false;
+  }
+  state.work=data;
+  localStorage.setItem(sessionKey(),workId);
   renderWork();
+  return true;
 }
 
 /* ---------- 跳转：瞬时定位 + 稳定后恢复自动加载 ---------- */
@@ -420,6 +450,56 @@ function toggleSidebarWide(){
   const c=document.body.classList.toggle('sidebar-collapsed');
   localStorage.setItem('reader.sidebarCollapsed', c?'1':'0');
 }
+/* ---------- 目录栏宽度：拖右边缘调整，双击恢复默认，[ 键整体隐藏 ----------
+   宽度写成 :root 的内联 --side-w，优先级高于样式表里的响应式默认值，
+   因此手动设过之后窗口再变宽变窄都不会被媒体查询覆盖。 */
+const SIDE_MIN=200, SIDE_MAX=560;
+function defaultSideWidth(){ return window.innerWidth>1500 ? 340 : (window.innerWidth>1180 ? 300 : 260); }
+function currentSideWidth(){
+  const v=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--side-w'),10);
+  return (Number.isFinite(v) && v>0) ? v : defaultSideWidth();
+}
+function applySideWidth(w){
+  const px=Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, w)));
+  document.documentElement.style.setProperty('--side-w', px+'px');
+  localStorage.setItem('reader.sideWidth', String(px));
+}
+function resetSideWidth(){
+  localStorage.removeItem('reader.sideWidth');
+  document.documentElement.style.removeProperty('--side-w');   // 交还给响应式默认
+}
+function restoreSideWidth(){
+  const saved=Number(localStorage.getItem('reader.sideWidth')||0);
+  if(saved>=SIDE_MIN && saved<=SIDE_MAX) document.documentElement.style.setProperty('--side-w', Math.round(saved)+'px');
+}
+function initSideResizer(){
+  const grip=byId('sidebarResizer'); if(!grip) return;
+  let dragging=false, startX=0, startW=0;
+  grip.addEventListener('pointerdown',e=>{
+    if(window.innerWidth<=900) return;          // 窄屏是抽屉，宽度不参与拖拽
+    dragging=true; startX=e.clientX; startW=currentSideWidth();
+    grip.classList.add('dragging'); document.body.classList.add('resizing-side');
+    if(grip.setPointerCapture) grip.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  grip.addEventListener('pointermove',e=>{
+    if(!dragging) return;
+    applySideWidth(startW + (e.clientX-startX));
+  });
+  const stop=e=>{
+    if(!dragging) return;
+    dragging=false; grip.classList.remove('dragging'); document.body.classList.remove('resizing-side');
+    if(grip.hasPointerCapture && grip.hasPointerCapture(e.pointerId)) grip.releasePointerCapture(e.pointerId);
+  };
+  grip.addEventListener('pointerup',stop);
+  grip.addEventListener('pointercancel',stop);
+  grip.addEventListener('dblclick',resetSideWidth);      // 双击回到默认宽度
+  grip.addEventListener('keydown',e=>{                   // 键盘：← → 微调，Shift 加速
+    if(e.key!=='ArrowLeft' && e.key!=='ArrowRight') return;
+    applySideWidth(currentSideWidth() + (e.key==='ArrowRight'?1:-1)*(e.shiftKey?40:12));
+    e.preventDefault();
+  });
+}
 /* 滚动时自动隐藏工具栏（沉浸阅读）。菜单/侧栏打开时不隐藏。 */
 let lastScrollY=-1;
 function updateToolbarAuto(){
@@ -482,6 +562,7 @@ function onKey(e){
     case 'Home': e.preventDefault(); if(state.currentChapter) jumpTo(state.currentChapter,null,false); break;
     case 'b': case 'B': { const a=currentAnchor(); if(a) toggleBookmark(a.id); break; }
     case '/': e.preventDefault(); if(searchBox) searchBox.focus(); break;
+    case '[': e.preventDefault(); if(window.innerWidth<=900){ if(sidebar.classList.contains('open')) closeSidebar(); else openSidebar(); } else toggleSidebarWide(); break;
     case '?': e.preventDefault(); if(helpOpen) closeHelp(); else openHelp(); break;
     case 'Escape': closeMenu(); closeHelp(); closeSidebar(); break;
   }
@@ -537,8 +618,19 @@ document.addEventListener('keydown',onKey);
 (async function init(){
   applyPrefs();
   applySidebarPref();
+  restoreSideWidth();
+  initSideResizer();
   layoutToolbar();
   state.index=await loadJson('works/index.json');
   workSelect.innerHTML=state.index.works.map(w=>`<option value="${w.work_id}">${escapeHtml(w.title)}</option>`).join('');
-  await selectWork(localStorage.getItem('reader.work') || state.index.works[0].work_id);
+  /* 恢复本副本上次阅读的作品；没有记录（或记录的作品打不开）时用本副本的主打作品。
+     若主打作品也取不到，才按 index 顺序逐个尝试，不会停在 "Failed to fetch" 上。 */
+  const ids=state.index.works.map(w=>w.work_id);
+  const primary=primaryWorkId();
+  const saved=localStorage.getItem(sessionKey());
+  const order=(saved && ids.includes(saved)) ? [saved, ...ids.filter(i=>i!==saved)]
+             : (primary && ids.includes(primary)) ? [primary, ...ids.filter(i=>i!==primary)]
+             : ids;
+  for(const id of order){ if(await selectWork(id)) return; }
+  showError('本文件中没有可阅读的作品数据');
 })().catch(err=>{ showError('加载失败：'+(err&&err.message?err.message:err)); });

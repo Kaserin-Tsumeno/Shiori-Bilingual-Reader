@@ -171,7 +171,7 @@ def update_index(root: Path, work: dict) -> None:
     )
 
 
-PROMPT_SCHEMA = """# 双语对照阅读器生产 Prompt Schema
+PROMPT_SCHEMA = """# 栞 Shiori 生产 Prompt Schema
 
 ## 任务目标
 将输入作品处理为可在本地双语阅读器中阅读的数据与页面资源，要求日文原文完整保留、中文译文准确通顺、日文汉字带假名注音，并支持左右对照、上下对照、章节选择、作品选择。
@@ -265,7 +265,7 @@ def validate(work: dict, root: Path) -> dict:
         "duplicate_ids": duplicates,
         "chapter_count": work["stats"]["chapter_count"],
         "ruby_enabled": any("<ruby>" in item["ja_ruby_html"] for item in work["paragraphs"]),
-        "reader_html_exists": (root / "reader.html").exists(),
+        "reader_html_exists": (root / reader_builder.reader_filename(work)).exists(),
         "index_updated": (root / "works" / "index.json").exists(),
     }
 
@@ -273,7 +273,7 @@ def validate(work: dict, root: Path) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--root", type=Path, default=None, help="工作根目录，默认取 KIT_ROOT 或本仓库根目录")
+    parser.add_argument("--root", type=Path, default=None, help="工作根目录，默认取 SHIORI_ROOT 或本仓库根目录")
     parser.add_argument("--work-id", required=True)
     parser.add_argument("--title", required=True)
     parser.add_argument("--chunk-size", type=int, default=80)

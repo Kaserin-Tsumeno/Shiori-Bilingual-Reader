@@ -1,9 +1,9 @@
 from __future__ import annotations
 import sys as _sys
-from pathlib import Path as _KitPath
+from pathlib import Path as _ShioriPath
 
-_sys.path.insert(0, str(_KitPath(__file__).resolve().parent))
-import kit_config as cfg
+_sys.path.insert(0, str(_ShioriPath(__file__).resolve().parent))
+import shiori_config as cfg
 
 r"""术语统一：把同一专名的多种译法收敛为一种。
 
@@ -19,7 +19,7 @@ import json
 import sys
 from pathlib import Path
 
-# 路径与规则来自 kit_config
+# 路径与规则来自 shiori_config
 
 
 def main() -> None:

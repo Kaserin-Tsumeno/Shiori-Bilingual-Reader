@@ -13,8 +13,7 @@ reader.html
 prompt_schema.md
 _backup*/
 
-# 作品级配置（术语表等）按作品隔离，不入库
-config/*/
+# 作品术语表是人工成果，纳入版本管理；只排除凭据
 !config/*.example.json
 
 # 凭据绝不能入库

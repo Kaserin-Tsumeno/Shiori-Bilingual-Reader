@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import kit_config as cfg  # noqa: E402
+import shiori_config as cfg  # noqa: E402
 from api_pipeline import (  # noqa: E402
     RULES_TEMPLATE,
     Log,

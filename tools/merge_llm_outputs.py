@@ -1,9 +1,9 @@
 from __future__ import annotations
 import sys as _sys
-from pathlib import Path as _KitPath
+from pathlib import Path as _ShioriPath
 
-_sys.path.insert(0, str(_KitPath(__file__).resolve().parent))
-import kit_config as cfg
+_sys.path.insert(0, str(_ShioriPath(__file__).resolve().parent))
+import shiori_config as cfg
 import reader_builder
 
 import argparse
@@ -57,12 +57,12 @@ def rebuild_embedded_reader(root: Path, work: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=Path, default=None, help="工作根目录，默认 KIT_ROOT 或仓库根")
+    parser.add_argument("--root", type=Path, default=None, help="工作根目录，默认 SHIORI_ROOT 或仓库根")
     parser.add_argument("--work-id", default=None, help="作品 id（也可用环境变量 WORK_ID）")
     args = parser.parse_args()
 
     work_id = cfg.resolve_work_id(args.work_id)
-    root = args.root or cfg.kit_root()
+    root = args.root or cfg.root()
     work_path = root / "works" / f"{work_id}.json"
     index_path = root / "works" / "index.json"
     trans_dir = cfg.trans_dir(work_id)
