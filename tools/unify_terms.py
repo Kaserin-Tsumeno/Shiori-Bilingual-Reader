@@ -3,11 +3,12 @@ import sys as _sys
 from pathlib import Path as _ShioriPath
 
 _sys.path.insert(0, str(_ShioriPath(__file__).resolve().parent))
+import schema
 import shiori_config as cfg
 
 r"""术语统一：把同一专名的多种译法收敛为一种。
 
-只改中文译文（zh），绝不动 ja_ruby_html。
+只改目标语言译文（tgt），绝不动源语言标注文本（src_annotated）。
 
 用法：
   py -3.11 tools\unify_terms.py            # 预览
@@ -41,14 +42,14 @@ def main() -> None:
         rows = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
         touched = False
         for r in rows:
-            zh = r.get("zh", "")
+            zh = schema.get_field(r, "tgt")
             new = zh
             for old, rep in RULES:
                 if old in new:
                     new = new.replace(old, rep)
             if new != zh:
                 hits.append((r["id"], zh[:60], new[:60]))
-                r["zh"] = new
+                r["tgt"] = new
                 changed_rows += 1
                 touched = True
         if touched:

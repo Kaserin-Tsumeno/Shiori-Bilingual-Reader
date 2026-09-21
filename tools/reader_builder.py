@@ -17,7 +17,11 @@ init_work.py 与 merge_llm_outputs.py 都调用本模块，保证模板只有一
 """
 
 import json
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import schema
 
 TEMPLATE = '''<!doctype html>
 <html lang="zh-CN">
@@ -53,8 +57,8 @@ TEMPLATE = '''<!doctype html>
       <div class="segmented" data-slot="layout" aria-label="对照模式">
         <button data-layout="side" class="active">左右</button>
         <button data-layout="stack">上下</button>
-        <button data-layout="ja">日文</button>
-        <button data-layout="zh">中文</button>
+        <button data-layout="src">原文</button>
+        <button data-layout="tgt">译文</button>
       </div>
       <label class="toggle" data-slot="tools"><input id="rubyToggle" type="checkbox" checked> 注音</label>
       <button id="fontMinus" data-slot="tools" title="减小字号">A-</button>
@@ -108,6 +112,7 @@ TEMPLATE = '''<!doctype html>
 <!-- 本副本的主打作品：打开哪个文件就先显示哪部作品；
      各副本用 reader.work.<primary> 独立记住自己上次读到哪部，互不串扰。 -->
 <script id="reader-primary" type="application/json">{primary_json}</script>
+<script id="reader-languages" type="application/json">{langs_json}</script>
 <script id="reader-index" type="application/json">{index_json}</script>
 <script id="reader-works" type="application/json">{works_json}</script>
 <script>{js}</script>
@@ -160,12 +165,15 @@ def build_reader_html(root: Path, work: dict) -> str:
             "path": f"library/{work['work_id']}/work.json",
         }]}
     css, js = _load_assets(root)
+    langs = schema.languages(root / "assets")
     # 转义 "</" 避免序列意外闭合 script 标签
     index_json = json.dumps(index, ensure_ascii=False).replace("</", "<\\/")
     works_json = json.dumps(_collect_works(root, index, work), ensure_ascii=False).replace("</", "<\\/")
     primary_json = json.dumps(work["work_id"], ensure_ascii=False).replace("</", "<\\/")
+    langs_json = json.dumps(langs, ensure_ascii=False).replace("</", "<\\/")
     return TEMPLATE.format(css=css, js=js, index_json=index_json,
-                           works_json=works_json, primary_json=primary_json)
+                           works_json=works_json, primary_json=primary_json,
+                           langs_json=langs_json)
 
 
 def reader_filename(work: dict) -> str:

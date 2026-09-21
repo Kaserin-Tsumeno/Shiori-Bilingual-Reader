@@ -4,9 +4,9 @@ r"""生产管道：日译中 + ruby 假名注音（直连 DeepSeek API）。
 
 设计要点
   - 工作单元 unit（默认 100 段）内部按 batch-size 切批并发请求
-  - 每批硬校验：JSON 合法 / 行数与 id 序列 / ja_ruby_html 剥离后与原文逐字一致 / 汉字注音覆盖率 100%
+  - 每批硬校验：JSON 合法 / 行数与 id 序列 / 标注剥离后与原文逐字一致 / 汉字注音覆盖率 100%
   - 重试只针对不合格的行（不再整批重发），失败再降级为逐行重试
-  - 最终兜底：用模型给出的注音对 + 原文切片重建 ja_ruby_html，结构上不可能改写日文
+  - 最终兜底：用模型给出的注音对 + 原文切片重建标注文本，结构上不可能改写日文
   - 批次级缓存：中断重启不重复消耗 token
   - 产物落在 translations/<work_id>/parts/unit_XXXX.jsonl，供 verify/merge 系列脚本使用
 
@@ -27,6 +27,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import schema  # noqa: E402
 import shiori_config as cfg  # noqa: E402
 
 TAG_RE = re.compile(r"<[^>]+>")
@@ -34,27 +35,45 @@ RT_RE = re.compile(r"<rt[^>]*>.*?</rt>", re.I | re.S)
 BR_RE = re.compile(r"<br\s*/?>", re.I)
 KANJI = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")  # 不含「々」：重复符号，无独立读音
 
-RULES_TEMPLATE = """你是资深日译中文学翻译，同时负责为日文汉字标注假名读音（ruby）。
+PROMPT_FILE = "prompts/translate.md"
+
+# 外置提示词缺失时的兜底（正常情况应使用 prompts/translate.md）
+FALLBACK_RULES = """你是资深日译中文学翻译，同时负责为日文汉字标注假名读音（ruby）。
 
 对输入 JSONL 的每一行，输出一行严格 JSONL，字段固定为：
-{{"id":"原样保留","zh":"简体中文译文","ja_ruby_html":"带 ruby 的日文原文","ruby_notes":""}}
+{"id":"原样保留","tgt":"译文","src_annotated":"带标注的原文","notes":""}
 
 硬性要求：
 1. id 原样保留，行数与顺序与输入完全一致，不增不减、不合并、不拆分。
-2. ja_ruby_html 必须逐字符保留日文原文，只允许插入 <ruby>漢字<rt>かんじ</rt></ruby>。
-   - 不得改写、删减、增补、调换语序、翻译日文原文。
-   - 原文换行在 JSON 字符串里写作 \\n（不要写 <br>）。
-3. 【注音必须 100% 覆盖】原文中出现的每一个汉字都必须被某对 <ruby>...</ruby> 包住，一个都不能漏。
-   - 送假名只给汉字部分注音：「送り」→ <ruby>送<rt>おく</rt></ruby>り
-   - 假名、标点、数字、拉丁字母、片假名外来语一律不注音。
-   - 连浊、熟字训、人名地名按语境判断读音。
-   - 极少数无法确定的读音也必须给出推定读音，并在 ruby_notes 注明「推定」。
-4. 译文：通顺自然的简体中文小说文风，准确传达原意，保留人物语气与「」引号，不总结不解释。
-   译文换行位置与原文 \\n 对应。
+2. src_annotated 必须逐字符保留原文，只允许插入 <ruby>漢字<rt>かんじ</rt></ruby>。
+3. 【注音必须 100% 覆盖】原文中出现的每一个汉字都必须被某对 <ruby>...</ruby> 包住。
+4. 译文：通顺自然的简体中文小说文风，不总结不解释。
 
-术语表（强制）：{glossary}
+术语表（强制）：[[glossary]]
 
-只输出 JSONL 本体，不要 markdown 代码块、不要任何解释文字。"""
+读音表（强制，必须逐字采用）：[[readings]]
+"""
+
+
+def load_prompt_template() -> str:
+    """读取外置提示词；不存在则用兜底模板。"""
+    path = cfg.root() / PROMPT_FILE
+    if path.exists():
+        try:
+            text = path.read_text(encoding="utf-8")
+            if text.strip():
+                return text
+        except Exception:
+            pass
+    return FALLBACK_RULES
+
+
+def render_prompt(work_id: str, readings: dict) -> str:
+    """把术语表与读音表填进提示词模板。"""
+    return (load_prompt_template()
+            .replace("[[glossary]]", cfg.glossary_text(work_id))
+            .replace("[[readings]]", schema.readings_text(readings)))
+
 
 
 class Log:
@@ -71,26 +90,24 @@ class Log:
             self.fh.flush()
 
 
+# 当前作品的标注类型（main 依据作品语言设置）；一切校验都经 schema.reduce_annotation
+ANNOTATION = "ruby"
+READINGS: dict = {}
+
+
 def strip_ruby(v: str) -> str:
-    return TAG_RE.sub("", RT_RE.sub("", BR_RE.sub("\n", v)))
+    """把带标注文本还原成可与原文比对的纯文本。"""
+    return schema.reduce_annotation(v, ANNOTATION)
 
 
 def kanji_gap(html: str) -> tuple[int, int, str]:
-    """返回 (汉字总数, 已注音数, 未覆盖汉字串)。"""
-    plain = TAG_RE.sub("", RT_RE.sub("", BR_RE.sub("\n", html)))
-    covered: list[str] = []
-    for m in re.finditer(r"<ruby>(.*?)<rt[^>]*>.*?</rt></ruby>", html, re.S):
-        covered.extend(KANJI.findall(TAG_RE.sub("", m.group(1))))
-    uncovered = list(KANJI.findall(plain))
-    for ch in covered:
-        if ch in uncovered:
-            uncovered.remove(ch)
-    return len(KANJI.findall(plain)), len(covered), "".join(uncovered)
+    """返回值 (汉字总数, 已被 ruby 覆盖的汉字数, 未覆盖的汉字串)。"""
+    return schema.kanji_gap(html)
 
 
 def call_api(key: str, model: str, rows: list[dict], system: str, extra_note: str, timeout: int = 900) -> str:
     sys_prompt = system + ("\n\n" + extra_note if extra_note else "")
-    payload = "\n".join(json.dumps({"id": r["id"], "ja": r["ja"]}, ensure_ascii=False) for r in rows)
+    payload = "\n".join(json.dumps({"id": r["id"], "src": schema.get_field(r, "src")}, ensure_ascii=False) for r in rows)
     body = {
         "model": model,
         "messages": [
@@ -128,7 +145,7 @@ def parse_rows(text: str) -> list[dict]:
 
 def judge_batch(batch: list[dict], parsed: list[dict]) -> dict:
     """逐行判定，返回 {rows: 合格行, bad: {id: 原因}, hints: [给模型的纠正提示]}。"""
-    src = {r["id"]: r["ja"] for r in batch}
+    src = {r["id"]: schema.get_field(r, "src") for r in batch}
     by_id: dict[str, dict] = {}
     for r in parsed:
         pid = str(r.get("id", ""))
@@ -143,23 +160,33 @@ def judge_batch(batch: list[dict], parsed: list[dict]) -> dict:
             bad[pid] = "缺失该行"
             hints.append(f"{pid}: 你漏掉了这一行，必须输出。")
             continue
-        zh = (r.get("zh") or "").strip()
-        html = r.get("ja_ruby_html") or ""
+        zh = schema.get_field(r, "tgt").strip()
+        html = schema.get_field(r, "src_annotated")
         expected, actual = strip_ruby(src[pid]), strip_ruby(html)
         if actual != expected:
             bad[pid] = "改动了日文原文"
-            hints.append(f"{pid}: ja_ruby_html 与原文不符。\n原文：{expected[:100]}\n你写的：{actual[:100]}")
+            hints.append(f"{pid}: src_annotated 与原文不符。\n原文：{expected[:100]}\n你写的：{actual[:100]}")
             continue
         if not zh:
             bad[pid] = "译文为空"
             hints.append(f"{pid}: zh 不能为空。")
+            continue
+        # 读音表校验：原文出现表内词时，该读音必须落在本段的 ruby 里
+        plain_src = strip_ruby(src[pid])
+        missing_reading = [t for t, info in READINGS.items()
+                           if t in plain_src and not schema.reading_present(html, info["reading"])]
+        if missing_reading:
+            bad[pid] = "读音表未遵守:" + ",".join(missing_reading)
+            hints.append(f"{pid}: 读音表要求这些词使用指定读音，请改正："
+                         + "、".join(f"{t}→{READINGS[t]['reading']}" for t in missing_reading))
             continue
         total, covered, gap = kanji_gap(html)
         if total and covered < total:
             bad[pid] = f"漏注音:{gap}"
             hints.append(f"{pid}: 这些汉字没有 ruby，必须补上：{gap}")
             continue
-        rows.append({"id": pid, "zh": r.get("zh", ""), "ja_ruby_html": html, "ruby_notes": r.get("ruby_notes", "")})
+        rows.append({"id": pid, "tgt": schema.get_field(r, "tgt"), "src_annotated": html,
+                     "notes": schema.get_field(r, "notes")})
     return {"rows": rows, "bad": bad, "hints": hints}
 
 
@@ -266,11 +293,12 @@ def run_batch(ctx: dict, batch: list[dict], max_try: int, log: Log, tag: str) ->
         log(f"{tag} 仍有 {len(pending)} 行失败，启用脚本兜底重建：{[r['id'] for r in pending][:5]}")
         for item in pending:
             p = last.get(item["id"]) or {}
-            rebuilt, gap = rebuild_ja(item["ja"], p.get("ja_ruby_html", ""))
-            notes = (p.get("ruby_notes", "") + " 注音由脚本兜底重建").strip()
+            rebuilt, gap = rebuild_ja(schema.get_field(item, "src"), schema.get_field(p, "src_annotated"))
+            notes = (schema.get_field(p, "notes") + " 注音由脚本兜底重建").strip()
             if gap:
                 notes += f"；未注音汉字：{gap}"
-            good[item["id"]] = {"id": item["id"], "zh": p.get("zh", ""), "ja_ruby_html": rebuilt, "ruby_notes": notes}
+            good[item["id"]] = {"id": item["id"], "tgt": schema.get_field(p, "tgt"),
+                                "src_annotated": rebuilt, "notes": notes}
 
     out = [good[r["id"]] for r in batch if r["id"] in good]
     return out if len(out) == len(batch) else None
@@ -289,6 +317,18 @@ def main() -> None:
 
     work = cfg.resolve_work_id(args.work_id)
     model = args.model or cfg.default_model()
+
+    # 标注类型由作品的语言声明决定（老作品没有 lang 字段时按日语 ruby 处理）
+    lang = schema.default_lang_block()
+    wf = cfg.work_file(work)
+    if wf.exists():
+        try:
+            lang = schema.read_lang_block(json.loads(wf.read_text(encoding="utf-8")))
+        except Exception:
+            pass
+    global ANNOTATION, READINGS
+    ANNOTATION = lang.get("annotation", "ruby")
+    READINGS = schema.load_readings(cfg.library_dir(), work)
     units_dir = cfg.units_dir(work)
     parts_dir = cfg.parts_dir(work)
     parts_dir.mkdir(parents=True, exist_ok=True)
@@ -296,7 +336,7 @@ def main() -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
     log = Log(cfg.logs_dir() / f"pipeline_{work}_{time.strftime('%Y%m%d_%H%M%S')}.log")
 
-    system = RULES_TEMPLATE.format(glossary=cfg.glossary_text(work))
+    system = render_prompt(work, READINGS)
 
     all_units = sorted(int(p.stem.split("_")[1]) for p in units_dir.glob("unit_*.jsonl"))
     if not all_units:
@@ -320,7 +360,7 @@ def main() -> None:
                 continue
         todo.append(u)
 
-    log(f"作品 {work}｜总单元 {len(all_units)}，待处理 {len(todo)}，模型 {model}，并发 {args.concurrency}，批大小 {args.batch_size}")
+    log(f"作品 {work}｜总单元 {len(all_units)}，待处理 {len(todo)}，模型 {model}，并发 {args.concurrency}，批大小 {args.batch_size}，读音表 {len(READINGS)} 条，标注 {ANNOTATION}")
     if not todo:
         log("全部已完成。")
         return

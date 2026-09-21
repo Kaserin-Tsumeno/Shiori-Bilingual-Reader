@@ -46,6 +46,25 @@ library/你的书名/source.txt      ← UTF-8 编码，段落之间用空行隔
 
 写进去的名字，全书会强制统一译法，不会这一章叫「太郎」下一章叫「太郎君」。
 
+**（强烈建议，如果你在意人名读音）** 再看一眼 `library/你的书名/readings.json`：
+
+```json
+{
+  "花子": "はなこ",
+  "桜ヶ丘": { "reading": "さくらがおか", "confidence": "推定" }
+}
+```
+
+日语人名读音最容易被注错——同一个「田中」，模型可能这章读 たなか、那章读 でんちゅう。
+读音表里的词，生成后会被**机械校验**：读音对不上就打回重做。
+
+不知道该怎么填？先跑一次生产，再用一条命令让机器把全书读音汇总给你审：
+
+```powershell
+py -3.11 tools\harvest_readings.py --work-id 你的书名
+# 产出 readings.conflicts.md —— 只列"同一个词出现多种读音"的真问题
+```
+
 ### 第 2 步：生成（复制粘贴即可）
 
 ```powershell
@@ -138,7 +157,9 @@ $env:SHIORI_LIBRARY = "E:\我的书库"
 | `patch_missing_ruby.py --work-id X` | 个别汉字漏了注音，补上 |
 | `unify_terms.py --work-id X` | 统一专名译法（先预览，加 `--apply` 才写入） |
 | `final_report.py --work-id X` | 交付前体检（注音覆盖率、译文完整性） |
+| `harvest_readings.py --work-id X` | 汇总全书读音，揪出"同词不同读"的人名 |
 | `audit_source_and_ruby.py --work-id X` | 核查原稿有没有漏段 |
+| `migrate_work.py --source <旧json> --work-id X` | 把旧格式作品迁到新结构 |
 
 ---
 
@@ -170,6 +191,8 @@ $env:SHIORI_LIBRARY = "E:\我的书库"
 ## 想了解内部机制
 
 - **[docs/流水线详解.md](docs/流水线详解.md)** — 数据流、校验规则、重试层级、排错
+- **[docs/提示词修改指南.md](docs/提示词修改指南.md)** — 改译文风格 / 注音策略，不必动代码
+- **[docs/多语言与扩展.md](docs/多语言与扩展.md)** — 加一门语言、预留了什么、没做什么
 - **[docs/English](README.en.md)** — English version of this document
 
 ---

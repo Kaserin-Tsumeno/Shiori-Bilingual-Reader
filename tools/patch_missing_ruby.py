@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import schema  # noqa: E402
 import shiori_config as cfg  # noqa: E402
 from api_pipeline import (  # noqa: E402
     RULES_TEMPLATE,
@@ -50,7 +51,7 @@ def main() -> None:
             if not line.strip():
                 continue
             r = json.loads(line)
-            _, _, gap = kanji_gap(r.get("ja_ruby_html", ""))
+            _, _, gap = schema.kanji_gap(schema.get_field(r, "src_annotated"))
             if gap:
                 targets.setdefault(path.name, []).append(r["id"])
 
@@ -62,13 +63,13 @@ def main() -> None:
 
     notice = (
         "这一行必须补全：原文中每一个汉字都要有 <ruby>漢字<rt>かな</rt></ruby>，一个都不能漏。"
-        "同时 ja_ruby_html 必须与原文逐字符一致，不得增删改任何字符。"
+        "同时 src_annotated 必须与原文逐字符一致，不得增删改任何字符。"
     )
 
     fixed = 0
     for fname, ids in targets.items():
         src_rows = {
-            json.loads(line)["id"]: json.loads(line)["ja"]
+            json.loads(line)["id"]: schema.get_field(json.loads(line), "src")
             for line in (units_dir / fname).read_text(encoding="utf-8").splitlines()
             if line.strip()
         }
@@ -100,13 +101,13 @@ def main() -> None:
             if best is None:
                 old = by_id[pid]
                 # 用模型最新输出里的注音对重建（字符全部取自原文，不会改写日文）
-                source_html = (latest or {}).get("ja_ruby_html") or old.get("ja_ruby_html", "")
+                source_html = schema.get_field(latest or {}, "src_annotated") or schema.get_field(old, "src_annotated")
                 rebuilt, gap = rebuild_ja(src_rows[pid], source_html)
                 best = {
                     "id": pid,
-                    "zh": old.get("zh", "") or (latest or {}).get("zh", ""),
-                    "ja_ruby_html": rebuilt,
-                    "ruby_notes": (old.get("ruby_notes", "") + " 经脚本重建补注音").strip(),
+                    "tgt": schema.get_field(old, "tgt") or schema.get_field(latest or {}, "tgt"),
+                    "src_annotated": rebuilt,
+                    "notes": (schema.get_field(old, "notes") + " 经脚本重建补注音").strip(),
                 }
                 log(f"{pid} 直接重试未通过，改用重建（剩余缺口 {gap or '无'}）")
             else:

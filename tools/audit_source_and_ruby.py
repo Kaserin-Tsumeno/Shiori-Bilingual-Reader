@@ -3,6 +3,7 @@ import sys as _sys
 from pathlib import Path as _ShioriPath
 
 _sys.path.insert(0, str(_ShioriPath(__file__).resolve().parent))
+import schema
 import shiori_config as cfg
 
 r"""核查原稿与作品 JSON 的段落一致性，并统计 ruby 汉字覆盖率。
@@ -75,7 +76,7 @@ def main() -> None:
     src_lines = [l for l in src_text.split("\n") if l.strip()]
     work_lines = []
     for p in paras:
-        work_lines.extend(p["ja"].split("\n"))
+        work_lines.extend(schema.get_field(p, "src").split("\n"))
     print(f"原稿非空行数: {len(src_lines)} / 作品 ja 非空行数: {len(work_lines)}")
 
     mismatch = 0
@@ -94,7 +95,7 @@ def main() -> None:
     total = covered = 0
     no_ruby_paras = []
     for p in paras:
-        html = p.get("ja_ruby_html") or ""
+        html = schema.get_field(p, "src_annotated")
         if p.get("ruby_status") != "generated":
             continue
         t, c = ruby_coverage(html)

@@ -3,6 +3,7 @@ import sys as _sys
 from pathlib import Path as _ShioriPath
 
 _sys.path.insert(0, str(_ShioriPath(__file__).resolve().parent))
+import schema
 import shiori_config as cfg
 
 r"""最终验收报告：对作品 JSON 做交付级体检。
@@ -82,10 +83,10 @@ def main() -> None:
 
     for p in paras:
         pid = p["id"]
-        ja = p.get("ja", "")
-        zh = (p.get("zh") or "").strip()
-        rh = p.get("ja_ruby_html") or ""
-        notes = p.get("ruby_notes") or ""
+        ja = schema.get_field(p, "src")
+        zh = schema.get_field(p, "tgt").strip()
+        rh = schema.get_field(p, "src_annotated")
+        notes = schema.get_field(p, "notes")
 
         if zh:
             stats["已有中文译文"] += 1

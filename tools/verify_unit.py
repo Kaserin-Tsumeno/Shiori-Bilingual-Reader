@@ -3,10 +3,10 @@ from __future__ import annotations
 """单元级质量校验：在调用 merge_llm_outputs.py 之前先拦截不合格输出。
 
 校验项：
-  1. 输出文件每行都是合法 JSON，且有 id / zh / ja_ruby_html 字段。
+  1. 输出文件每行都是合法 JSON，且有 id / tgt / src_annotated 字段（旧名 zh / ja_ruby_html 亦兼容）。
   2. id 序列与输入单元完全一致（顺序相同、不漏不重）。
   3. zh 非空。
-  4. ja_ruby_html 还原纯文本后与原 ja 完全一致（ruby 一致性）。
+  4. src_annotated 还原纯文本后与原文 src 完全一致（标注一致性）。
   5. 统计 ruby_notes 非空行数。
 
 用法：
@@ -18,7 +18,11 @@ import argparse
 import html
 import json
 import re
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import schema
 
 TAG_RE = re.compile(r"<[^>]+>")
 RT_RE = re.compile(r"<rt[^>]*>.*?</rt>", re.I | re.S)
@@ -26,10 +30,8 @@ BR_RE = re.compile(r"<br\s*/?>", re.I)
 
 
 def strip_ruby_html(value: str) -> str:
-    value = BR_RE.sub("\n", value)
-    value = RT_RE.sub("", value)
-    value = TAG_RE.sub("", value)
-    return html.unescape(value)
+    """把带标注文本还原成纯文本（委托 schema，标注类型可扩展）。"""
+    return schema.reduce_annotation(value, "ruby")
 
 
 def load_jsonl(path: Path) -> list[dict]:
@@ -53,7 +55,7 @@ def main() -> None:
     args = parser.parse_args()
 
     src = load_jsonl(args.unit_file)
-    src_by_id = {str(r["id"]): r["ja"] for r in src}
+    src_by_id = {str(r["id"]): schema.get_field(r, "src") for r in src}
     # 期望值同样经过 ruby 剥离：少数原文 ja 本身内嵌 <ruby><rb>…</rb><rt>…</rt></ruby>
     # （上游预置注音），判定口径必须与 merge_llm_outputs.py 保持一致。
     expected_by_id = {pid: strip_ruby_html(ja) for pid, ja in src_by_id.items()}
@@ -87,10 +89,10 @@ def main() -> None:
         ja = expected_by_id.get(pid)
         if ja is None:
             continue
-        zh = (row.get("zh") or "").strip()
+        zh = schema.get_field(row, "tgt").strip()
         if not zh:
             empty_zh.append(pid)
-        ruby_html = row.get("ja_ruby_html") or ""
+        ruby_html = schema.get_field(row, "src_annotated")
         if not ruby_html:
             missing_ruby.append(pid)
         else:
@@ -103,7 +105,7 @@ def main() -> None:
                         "actual": plain,
                     }
                 )
-        if (row.get("ruby_notes") or "").strip():
+        if schema.get_field(row, "notes").strip():
             notes_count += 1
 
     report.update(

@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import schema  # noqa: E402
 import shiori_config as cfg  # noqa: E402
 
 ID_RE = re.compile(r"^p(\d+)$")
@@ -34,9 +35,25 @@ TARGETS = {
 }
 
 
-def load_source_rows(src_dir: Path) -> dict:
+def load_source_rows(src_dir: Path, work_id: str) -> dict:
+    """取段落来源：优先 work.json（唯一权威数据），退回 chunks/ 原料分块。"""
     rows: dict[str, dict] = {}
     order: list[str] = []
+
+    work_file = cfg.work_file(work_id)
+    if work_file.exists():
+        work = json.loads(work_file.read_text(encoding="utf-8"))
+        for para in work.get("paragraphs", []):
+            pid = str(para["id"])
+            rows[pid] = {
+                "id": pid,
+                "chapter_id": para.get("chapter_id", ""),
+                "src": schema.get_field(para, "src"),
+            }
+            order.append(pid)
+        rows["__order__"] = order  # type: ignore[assignment]
+        return rows
+
     for path in sorted(src_dir.glob("*.jsonl")):
         with path.open("r", encoding="utf-8") as f:
             for line in f:
@@ -71,11 +88,12 @@ def main() -> None:
     prefix = args.prefix or default_prefix
 
     src_dir = cfg.chunks_dir(work_id)
-    if not src_dir.exists() or not any(src_dir.glob("*.jsonl")):
-        raise SystemExit(f"未找到原料分块：{src_dir}\n请先运行 tools\\init_work.py")
     out_dir = dir_of(work_id)
 
-    rows = load_source_rows(src_dir)
+    if not cfg.work_file(work_id).exists() and not (src_dir.exists() and any(src_dir.glob("*.jsonl"))):
+        raise SystemExit(f"未找到作品数据：{cfg.work_file(work_id)}\n请先运行 tools\\init_work.py")
+
+    rows = load_source_rows(src_dir, work_id)
     order: list[str] = rows.pop("__order__")  # type: ignore[assignment]
 
     m = ID_RE.match(args.start_id)
@@ -116,7 +134,8 @@ def main() -> None:
                 continue
             lines = [
                 json.dumps(
-                    {"id": pid, "chapter_id": rows[pid].get("chapter_id", ""), "ja": rows[pid]["ja"]},
+                    {"id": pid, "chapter_id": rows[pid].get("chapter_id", ""),
+                     "src": rows[pid].get("src") or rows[pid].get("ja", "")},
                     ensure_ascii=False,
                 )
                 for pid in ids

@@ -1,0 +1,39 @@
+{
+  "_说明": "语言注册表：UI 的按钮文案、书写方向、字体、默认标注类型都由这里驱动。新增一门语言＝加一条记录（必要时补一条 CSS 字体规则），阅读器代码不需要改。",
+  "ja": {
+    "name": "日本語",
+    "label": "日文",
+    "dir": "ltr",
+    "annotation": "ruby",
+    "font": "'Yu Mincho','Yu Gothic','Noto Serif JP',serif",
+    "fontSize": "+1px"
+  },
+  "zh-Hans": {
+    "name": "简体中文",
+    "label": "中文",
+    "dir": "ltr",
+    "annotation": "none",
+    "font": "'Microsoft YaHei','Noto Sans SC',Arial,sans-serif"
+  },
+  "zh-Hant": {
+    "name": "繁體中文",
+    "label": "繁中",
+    "dir": "ltr",
+    "annotation": "none",
+    "font": "'Microsoft JhengHei','Noto Sans TC',sans-serif"
+  },
+  "en": {
+    "name": "English",
+    "label": "英文",
+    "dir": "ltr",
+    "annotation": "none",
+    "font": "Georgia,'Times New Roman',serif"
+  },
+  "ko": {
+    "name": "한국어",
+    "label": "韩文",
+    "dir": "ltr",
+    "annotation": "none",
+    "font": "'Malgun Gothic','Noto Sans KR',sans-serif"
+  }
+}

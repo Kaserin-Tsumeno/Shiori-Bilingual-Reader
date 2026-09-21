@@ -3,6 +3,7 @@ import sys as _sys
 from pathlib import Path as _ShioriPath
 
 _sys.path.insert(0, str(_ShioriPath(__file__).resolve().parent))
+import schema
 import shiori_config as cfg
 
 r"""续跑进度看板：统计哪些工作单元已产出、哪些还缺。
@@ -47,9 +48,18 @@ def main() -> None:
     parts_dir = cfg.parts_dir(work_id)
 
     produced: set[str] = set()
+    source = "parts"
     if parts_dir.exists():
         for path in sorted(parts_dir.glob("*.jsonl")):
             produced.update(load_ids(path))
+
+    # parts 常被 merge_parts_to_chunks --prune-parts 清理；那时改用
+    # work.json 的合并状态判断（已回填译文的段落即视为已完成）
+    if not produced and cfg.work_file(work_id).exists():
+        work = json.loads(cfg.work_file(work_id).read_text(encoding="utf-8"))
+        produced = {str(pp["id"]) for pp in work.get("paragraphs", []) if schema.get_field(pp, "tgt")}
+        source = "work.json（parts 已清理）"
+
 
     done_units: list[int] = []
     pending_units: list[dict] = []
@@ -70,6 +80,7 @@ def main() -> None:
             )
 
     report = {
+        "统计来源": source,
         "total_units": len(done_units) + len(pending_units),
         "done_units": len(done_units),
         "pending_units": len(pending_units),

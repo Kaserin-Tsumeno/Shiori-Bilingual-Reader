@@ -3,6 +3,7 @@ import sys as _sys
 from pathlib import Path as _ShioriPath
 
 _sys.path.insert(0, str(_ShioriPath(__file__).resolve().parent))
+import schema
 import shiori_config as cfg
 import reader_builder
 
@@ -18,10 +19,8 @@ BR_RE = re.compile(r"<br\s*/?>", re.I)
 
 
 def strip_ruby_html(value: str) -> str:
-    value = BR_RE.sub("\n", value)
-    value = RT_RE.sub("", value)
-    value = TAG_RE.sub("", value)
-    return html.unescape(value)
+    """把带标注文本还原成纯文本（委托 schema）。"""
+    return schema.reduce_annotation(value, "ruby")
 
 
 def load_jsonl(path: Path) -> list[dict]:
@@ -42,11 +41,13 @@ def load_outputs(trans_dir: Path) -> dict[str, dict]:
         for row in load_jsonl(path):
             pid = str(row["id"])
             current = merged.setdefault(pid, {"id": pid})
-            if row.get("zh"):
-                current["zh"] = row["zh"]
-            if row.get("ja_ruby_html"):
-                current["ja_ruby_html"] = row["ja_ruby_html"]
-                current["ruby_notes"] = row.get("ruby_notes", "")
+            tgt = schema.get_field(row, "tgt")
+            annotated = schema.get_field(row, "src_annotated")
+            if tgt:
+                current["tgt"] = tgt
+            if annotated:
+                current["src_annotated"] = annotated
+                current["notes"] = schema.get_field(row, "notes")
     return merged
 
 
@@ -76,19 +77,21 @@ def main() -> None:
         row = outputs.get(para["id"])
         if not row:
             continue
-        if row.get("zh"):
-            para["zh"] = row["zh"]
+        tgt = schema.get_field(row, "tgt")
+        annotated = schema.get_field(row, "src_annotated")
+        if tgt:
+            para["tgt"] = tgt
             para["translation_status"] = "translated"
             updated_zh += 1
-        if row.get("ja_ruby_html"):
-            plain = strip_ruby_html(row["ja_ruby_html"])
-            if plain == strip_ruby_html(para["ja"]):
-                para["ja_ruby_html"] = row["ja_ruby_html"].replace("\n", "<br>")
+        if annotated:
+            plain = strip_ruby_html(annotated)
+            if plain == strip_ruby_html(schema.get_field(para, "src")):
+                para["src_annotated"] = annotated.replace("\n", "<br>")
                 para["ruby_status"] = "generated"
-                para["ruby_notes"] = row.get("ruby_notes", "")
+                para["notes"] = schema.get_field(row, "notes")
                 updated_ruby += 1
             else:
-                mismatches.append({"id": para["id"], "expected": para["ja"], "actual": plain})
+                mismatches.append({"id": para["id"], "expected": schema.get_field(para, "src"), "actual": plain})
 
     translated_count = sum(1 for p in work["paragraphs"] if p.get("translation_status") == "translated")
     ruby_generated_count = sum(1 for p in work["paragraphs"] if p.get("ruby_status") == "generated")
@@ -102,8 +105,8 @@ def main() -> None:
     by_id = {p["id"]: p for p in work["paragraphs"]}
     for chapter in work["chapters"]:
         first = by_id.get(chapter["start_paragraph_id"])
-        if first and first.get("zh"):
-            chapter["title_zh"] = first["zh"].splitlines()[0]
+        if first and schema.get_field(first, "tgt"):
+            chapter["title_tgt"] = schema.get_field(first, "tgt").splitlines()[0]
 
     work_path.write_text(json.dumps(work, ensure_ascii=False, indent=2), encoding="utf-8")
     index = json.loads(index_path.read_text(encoding="utf-8"))

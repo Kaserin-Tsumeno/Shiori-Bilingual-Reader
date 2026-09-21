@@ -3,6 +3,7 @@ import sys as _sys
 from pathlib import Path as _ShioriPath
 
 _sys.path.insert(0, str(_ShioriPath(__file__).resolve().parent))
+import schema
 import shiori_config as cfg
 
 """把 parts/ 下的单元产物累积合并为 chunk_600_XXXX.zh_ruby.jsonl。
@@ -142,17 +143,17 @@ def main() -> None:
             row = pool.get(pid)
             if row is None:
                 continue
-            zh = row.get("zh", "")
+            zh = schema.get_field(row, "tgt")
             if "<" in zh:
-                zh = strip_html(zh)
+                zh = schema.reduce_ruby(zh)
                 sanitized_zh.append(pid)
             lines.append(
                 json.dumps(
                     {
                         "id": pid,
-                        "zh": zh,
-                        "ja_ruby_html": row.get("ja_ruby_html", ""),
-                        "ruby_notes": row.get("ruby_notes", ""),
+                        "tgt": zh,
+                        "src_annotated": schema.get_field(row, "src_annotated"),
+                        "notes": schema.get_field(row, "notes"),
                     },
                     ensure_ascii=False,
                 )

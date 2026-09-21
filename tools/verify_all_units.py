@@ -3,13 +3,14 @@ import sys as _sys
 from pathlib import Path as _ShioriPath
 
 _sys.path.insert(0, str(_ShioriPath(__file__).resolve().parent))
+import schema
 import shiori_config as cfg
 
 """批量校验 parts/ 下所有单元产物，输出汇总报告。
 
 对每个检测到的 unit_XXXX，用 chunks_units 的原文作基准：
   - 覆盖度：产出 id 是否覆盖该单元全部原文 id
-  - ruby 一致性：ja_ruby_html 剥离 ruby 后是否与原文（剥离后）完全一致
+  - 标注一致性：src_annotated 剥离标注后是否与原文（剥离后）完全一致
   - zh 非空、id 顺序与输入一致、无重复
 
 用法：
@@ -67,7 +68,7 @@ def main() -> None:
             failed.append({"unit": num, "reason": "缺少原文单元文件"})
             continue
         src = load_jsonl(src_path)
-        expected = {str(r["id"]): strip_ruby_html(r["ja"]) for r in src}
+        expected = {str(r["id"]): strip_ruby_html(schema.get_field(r, "src")) for r in src}
         order = [str(r["id"]) for r in src]
 
         seen: dict[str, dict] = {}
@@ -86,9 +87,9 @@ def main() -> None:
         for pid, row in seen.items():
             if pid not in expected:
                 continue
-            if not (row.get("zh") or "").strip():
+            if not schema.get_field(row, "tgt").strip():
                 empty_zh.append(pid)
-            rh = row.get("ja_ruby_html") or ""
+            rh = schema.get_field(row, "src_annotated")
             if not rh:
                 mismatch.append(pid)
             elif strip_ruby_html(rh) != expected[pid]:

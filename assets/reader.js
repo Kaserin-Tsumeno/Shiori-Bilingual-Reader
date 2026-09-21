@@ -78,8 +78,56 @@ function applyLayout(){
 }
 function setLayout(layout){ state.layout=layout; localStorage.setItem("reader.layout",layout); applyLayout(); }
 
+/* ---------- 语言（注册表驱动，新增语言不必改代码） ---------- */
+let LANGS = null;   // 语言注册表（内嵌 languages.json）
+let LANG = null;    // 当前作品的语言声明 {src, tgt, annotation, views}
+
+function langTable(){ if(!LANGS) LANGS = embeddedJson('reader-languages') || {}; return LANGS; }
+function langInfo(code){
+  const tb=langTable();
+  return tb[code] || tb[String(code||'').split('-')[0]] ||
+         { name:code||'', label:code||'', dir:'ltr', annotation:'none', font:'inherit' };
+}
+function readLang(work){
+  const l = work && work.lang;
+  if(l && l.src && l.tgt){
+    return { src:l.src, tgt:l.tgt,
+             annotation:l.annotation || langInfo(l.src).annotation || 'none',
+             views:(l.views && l.views.length) ? l.views : ['side','stack','src','tgt'] };
+  }
+  /* 老作品没有语言声明：按中日处理（与旧行为一致） */
+  return { src:'ja', tgt:'zh-Hans', annotation:'ruby', views:['side','stack','src','tgt'] };
+}
+function applyLanguage(){
+  if(!LANG) return;
+  const s=langInfo(LANG.src), tInfo=langInfo(LANG.tgt);
+  document.documentElement.style.setProperty('--font-src', s.font || 'inherit');
+  document.documentElement.style.setProperty('--font-tgt', tInfo.font || 'inherit');
+  const setLabel=(layout,label)=>{ const b=document.querySelector(`[data-layout="${layout}"]`); if(b && label) b.textContent=label; };
+  setLabel('src', s.label || s.name);
+  setLabel('tgt', tInfo.label || tInfo.name);
+  /* 作品可声明只开放部分视图 */
+  document.querySelectorAll('[data-layout]').forEach(b=>{ b.hidden = !LANG.views.includes(b.dataset.layout); });
+  reader.setAttribute('data-src-lang', LANG.src);
+  reader.setAttribute('data-tgt-lang', LANG.tgt);
+  /* RTL 预留：目前仅标注方向，样式仍按 LTR 渲染（未实现 RTL 布局） */
+  reader.setAttribute('dir', (s.dir === 'rtl' || tInfo.dir === 'rtl') ? 'rtl' : 'ltr');
+}
+
 /* ---------- 索引 ---------- */
 function prepareWork(){
+  LANG = readLang(state.work);
+  /* 字段规范化：新格式用 src / src_annotated / tgt，老作品仍是 ja / ja_ruby_html / zh。
+     只在这里归一化一次，后续代码统一用新名。 */
+  for(const c of state.work.chapters){
+    c.title_src = c.title_src || c.title_ja || c.chapter_id;
+    c.title_tgt = c.title_tgt || c.title_zh || '';
+  }
+  for(const p of state.work.paragraphs){
+    p.src = p.src || p.ja || '';
+    p.srcAnnotated = p.src_annotated || p.ja_ruby_html || '';
+    p.tgt = p.tgt || p.zh || '';
+  }
   byChapter=new Map(); chapterStart=new Set(); chapterPos=new Map(); paraById=new Map();
   state.work.chapters.forEach((c,i)=>{ byChapter.set(c.chapter_id,[]); chapterPos.set(c.chapter_id,i); chapterStart.add(c.start_paragraph_id); });
   for(const p of state.work.paragraphs){ const arr=byChapter.get(p.chapter_id); if(arr) arr.push(p); paraById.set(p.id,p); }
@@ -114,8 +162,8 @@ function toggleBookmark(pid){
     const p=paraById.get(pid); if(!p) return;
     const ci=chapterPos.get(p.chapter_id); const c=ci===undefined?null:state.work.chapters[ci];
     bookmarks.set(pid,{ para_id:pid, chapter_id:p.chapter_id,
-      chapter_zh:(c&&c.title_zh)||'', chapter_ja:(c&&c.title_ja)||'',
-      ja:(p.ja||'').slice(0,60), zh:(p.zh||'').slice(0,60), t:Date.now() });
+      chapter_zh:(c&&c.title_tgt)||'', chapter_ja:(c&&c.title_src)||'',
+      ja:(p.src||'').slice(0,60), zh:(p.tgt||'').slice(0,60), t:Date.now() });
   }
   saveBookmarks();
   const btn=reader.querySelector(`.bm-btn[data-bm="${pid}"]`);
@@ -142,7 +190,7 @@ function setTab(name){
 /* ---------- 渲染 ---------- */
 function paraHtml(p){
   const isChapter=chapterStart.has(p.id), on_=bookmarks.has(p.id);
-  return `<section class="para${isChapter?' chapter-heading':''}" id="${p.id}" data-chapter="${p.chapter_id}"><button class="bm-btn${on_?' on':''}" type="button" data-bm="${p.id}" title="收藏此段">${on_?'★':'☆'}</button><div class="texts"><div class="ja" lang="ja">${p.ja_ruby_html || escapeHtml(p.ja)}</div><div class="zh" lang="zh-CN">${escapeHtml(p.zh || '')}</div></div></section>`;
+  return `<section class="para${isChapter?' chapter-heading':''}" id="${p.id}" data-chapter="${p.chapter_id}"><button class="bm-btn${on_?' on':''}" type="button" data-bm="${p.id}" title="收藏此段">${on_?'★':'☆'}</button><div class="texts"><div class="src" lang="${LANG?LANG.src:'ja'}">${p.srcAnnotated || escapeHtml(p.src)}</div><div class="tgt" lang="${LANG?LANG.tgt:'zh-Hans'}">${escapeHtml(p.tgt || '')}</div></div></section>`;
 }
 function chapterHtml(i){ const c=state.work.chapters[i]; if(!c) return ''; return (byChapter.get(c.chapter_id)||[]).map(paraHtml).join(''); }
 function renderRange(start,end){
@@ -196,7 +244,7 @@ function fillViewport(){ let g=0; while(document.documentElement.scrollHeight<wi
 function renderChapters(filter=''){
   const q=filter.trim();
   chapterList.innerHTML=state.work.chapters.map(c=>{
-    const ja=c.title_ja||c.chapter_id, zh=c.title_zh||'';
+    const ja=c.title_src||c.chapter_id, zh=c.title_tgt||'';
     if(q && !ja.includes(q) && !zh.includes(q)) return '';
     return `<button class="chapter-item" data-chapter="${c.chapter_id}" title="${escapeHtml(ja)}"><div class="chapter-title">${escapeHtml(ja)}</div>${zh?`<div class="chapter-title-zh">${escapeHtml(zh)}</div>`:''}</button>`;
   }).join('');
@@ -205,7 +253,7 @@ function renderChapters(filter=''){
 }
 /* 窄屏只显示中文标题（更短，避免把 ⋯ 挤出屏幕）；宽屏中日对照。 */
 function chapterLabel(c){
-  const ja=c.title_ja||c.chapter_id, zh=c.title_zh||'';
+  const ja=c.title_src||c.chapter_id, zh=c.title_tgt||'';
   if(window.innerWidth<=900) return zh||ja;
   return zh?`${ja} ｜ ${zh}`:ja;
 }
@@ -213,7 +261,7 @@ function fillChapters(){ chapterSelect.innerHTML=state.work.chapters.map(c=>`<op
 function renderWork(){
   prepareWork(); loadBookmarks();
   fillChapters(); renderChapters(sideSearch?sideSearch.value:''); renderBookmarks();
-  applyLayout(); reader.classList.toggle('hide-ruby', !rubyToggle.checked);
+  applyLayout(); applyLanguage(); reader.classList.toggle('hide-ruby', !rubyToggle.checked);
   if(!applyHash() && !restoreProgress()) renderRange(0, CHUNK);
   updateGlobalProgress();
 }
@@ -280,7 +328,7 @@ function applyHash(){
 function jumpChapter(delta){ const i=chapterSelect.selectedIndex+delta; if(i>=0&&i<chapterSelect.options.length){ chapterSelect.selectedIndex=i; jumpTo(chapterSelect.value,null,false); } }
 function doSearch(){
   const q=searchBox.value.trim(); if(!q) return;
-  const hit=state.work.paragraphs.find(p=>(p.ja&&p.ja.includes(q))||(p.zh&&p.zh.includes(q)));
+  const hit=state.work.paragraphs.find(p=>(p.src&&p.src.includes(q))||(p.tgt&&p.tgt.includes(q)));
   if(!hit){ showError(`未找到「${q}」`); return; }
   jumpTo(hit.chapter_id, hit.id, false);
   requestAnimationFrame(()=>{ const el=document.getElementById(hit.id); if(el){ el.classList.add('active'); setTimeout(()=>el.classList.remove('active'),1800); } });
@@ -417,11 +465,11 @@ function exportContent(kind){
   if(kind==='md') out.push(`# ${fileBase()}\n`);
   for(const c of state.work.chapters){
     const paras=byChapter.get(c.chapter_id)||[]; if(!paras.length) continue;
-    const title=c.title_zh||c.title_ja||c.chapter_id;
+    const title=c.title_tgt||c.title_src||c.chapter_id;
     out.push(kind==='md' ? `\n## ${title}\n` : `\n【${title}】\n`);
     for(const p of paras){
-      if(kind==='md' && p.ja) out.push('> '+p.ja.replace(/\n/g,'\n> ')+'\n');
-      out.push((p.zh||'')+'\n');
+      if(kind==='md' && p.src) out.push('> '+p.src.replace(/\n/g,'\n> ')+'\n');
+      out.push((p.tgt||'')+'\n');
     }
   }
   const text=out.join('\n');
