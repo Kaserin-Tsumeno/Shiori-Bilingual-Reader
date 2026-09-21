@@ -232,8 +232,8 @@ def load_readings(library_dir, work_id: str) -> dict[str, dict]:
     """读取音表：{词: {"reading": 读音, "confidence": "" | "推定"}}。
 
     支持两种写法：
-      "花子": "つむぎ"
-      "湾岸": {"reading": "げんと", "confidence": "推定"}
+      "花子": "はなこ"
+      "桜ヶ丘": {"reading": "さくらがおか", "confidence": "推定"}
     """
     data = _read_json(readings_path(library_dir, work_id), {})
     out: dict[str, dict] = {}
