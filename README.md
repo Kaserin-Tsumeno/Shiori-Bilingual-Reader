@@ -22,15 +22,19 @@
 
 ## 三步做好一本书
 
-### 第 1 步：把原稿放进 `sources/`
+> **一本书 = 一个目录。** 原作、术语表、中间产物、成品译文、成书全都在
+> `library/<书名>/` 里，而这个目录被 `.gitignore` 整体排除——**永远不会被 commit 或 push**。
+> 备份或搬走一本书，只要拷走它那一个目录。
+
+### 第 1 步：把原稿放进 `library/<书名>/`
 
 ```
-sources/你的书名.txt          ← UTF-8 编码，段落之间用空行隔开
+library/你的书名/source.txt      ← UTF-8 编码，段落之间用空行隔开
 ```
 
 章节会自动识别：以「第N話」开头的行会被当作章节标题。
 
-**（可选，但强烈建议）** 把主要人名写进 `config/你的书名/glossary.json`：
+**（可选，但强烈建议）** 把主要人名写进 `library/你的书名/glossary.json`：
 
 ```json
 {
@@ -46,11 +50,11 @@ sources/你的书名.txt          ← UTF-8 编码，段落之间用空行隔开
 
 ```powershell
 # ① 建立作品（分段、识别章节、生成阅读器骨架）
-py -3.11 tools\init_work.py --source sources\你的书名.txt --work-id 你的书名 --title "中文标题"
+py -3.11 tools\init_work.py --work-id 你的书名 --title "中文标题"
 
 # ② 切块
-py -3.11 tools\make_chunks.py --work-id 你的书名 --start-id p00001 --chunk-size 100 --out-subdir chunks_units --prefix unit
-py -3.11 tools\make_chunks.py --work-id 你的书名 --start-id p00001 --chunk-size 600 --out-subdir chunks_600 --prefix chunk_600
+py -3.11 tools\make_chunks.py --work-id 你的书名 --target units
+py -3.11 tools\make_chunks.py --work-id 你的书名 --target chunks_600
 
 # ③ 翻译 + 注音（可以随时 Ctrl+C，重跑会接着做）
 py -3.11 tools\api_pipeline.py --work-id 你的书名 --concurrency 12
@@ -66,13 +70,41 @@ py -3.11 tools\merge_llm_outputs.py --work-id 你的书名
 
 ### 第 3 步：阅读
 
-打开根目录下生成的 **`<你的书名>.html`**，双击即可。
+打开 **`library/<你的书名>/<书名>.html`**，双击即可。
 
 想让文件名更好认，可以在第 ① 步加上 `--reader-name`：
 
 ```powershell
-py -3.11 tools\init_work.py ... --reader-name "my-novel-双语"
-# → 生成 my-novel-双语.html
+py -3.11 tools\init_work.py --work-id 你的书名 --title "中文标题" --reader-name "my-novel-双语"
+# → 生成 library/你的书名/my-novel-双语.html
+```
+
+---
+
+## 目录结构：框架 / 书库 分家
+
+```
+shiori/
+├─ tools/  assets/  docs/  README*.md      ← 框架：进 git，可以安全 push
+│
+└─ library/                                ← 书库：整体被 .gitignore 排除，永不 push
+   ├─ index.json                          作品索引
+   └─ <书名>/
+      ├─ source.txt          原作
+      ├─ glossary.json       术语表（你手写的，全书译名靠它统一）
+      ├─ terms.json          译名统一规则（可选）
+      ├─ work.json           作品数据：段落 + 章节 + 译文 + 注音
+      ├─ chunks/ units/ chunks_600/       分块
+      ├─ parts/              生产中间产物
+      ├─ output/             成品译文
+      ├─ cache/ logs/        缓存与日志
+      └─ <书名>.html          成书（双击即读）
+```
+
+想换书库位置（比如放到另一个盘、或放进网盘同步目录），设一个环境变量即可：
+
+```powershell
+$env:SHIORI_LIBRARY = "E:\我的书库"
 ```
 
 ---
@@ -116,10 +148,11 @@ py -3.11 tools\init_work.py ... --reader-name "my-novel-双语"
 |---|---|
 | 提示「未找到 API 密钥」 | 设环境变量 `DEEPSEEK_API_KEY`，或把 `{api_key: sk-...}` 写进 `config/credentials.yaml` |
 | 提示「未找到工作单元」 | 第 ② 步的 `make_chunks` 还没跑，或 `--work-id` 和前面不一致 |
+| 提示「找不到原稿」 | 原稿应放在 `library/<书名>/source.txt`，或用 `--source` 指定 |
 | 打开书是空白 | `Ctrl+F5` 强制刷新；仍然空白就按 F12 看报错 |
 | 某几个单元没做完 | 跑 `unit_progress.py --list-pending` 看缺口，再单独 `--units` 重跑 |
 | 注音覆盖率不到 100% | 跑 `patch_missing_ruby.py` |
-| 同一名字译法不统一 | 补进 `config/<书名>/glossary.json`，重新生成 |
+| 同一名字译法不统一 | 补进 `library/<书名>/glossary.json`，重新生成 |
 
 ---
 

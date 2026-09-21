@@ -63,9 +63,9 @@ def main() -> None:
 
     work_id = cfg.resolve_work_id(args.work_id)
     root = args.root or cfg.root()
-    work_path = root / "works" / f"{work_id}.json"
-    index_path = root / "works" / "index.json"
-    trans_dir = cfg.trans_dir(work_id)
+    work_path = cfg.work_file(work_id)
+    index_path = cfg.index_file()
+    trans_dir = cfg.output_dir(work_id)
     work = json.loads(work_path.read_text(encoding="utf-8"))
     outputs = load_outputs(trans_dir)
 

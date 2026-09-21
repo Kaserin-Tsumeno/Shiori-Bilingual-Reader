@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import sys as _sys
+from pathlib import Path as _ShioriPath
+
+_sys.path.insert(0, str(_ShioriPath(__file__).resolve().parent))
+import shiori_config as cfg
+
 r"""阅读器 HTML 生成（单一来源）。
 
 reader.html 是「数据内嵌 + 资源内联」的单文件：
@@ -133,7 +139,7 @@ def _collect_works(root: Path, index: dict, current: dict) -> dict:
         if wid == current["work_id"]:
             works[wid] = current          # 内存里这份比磁盘新（刚合并过）
             continue
-        path = root / "works" / f"{wid}.json"
+        path = cfg.work_file(wid)
         if not path.exists():
             continue
         try:
@@ -144,14 +150,14 @@ def _collect_works(root: Path, index: dict, current: dict) -> dict:
 
 
 def build_reader_html(root: Path, work: dict) -> str:
-    index_path = root / "works" / "index.json"
+    index_path = cfg.index_file()
     if index_path.exists():
         index = json.loads(index_path.read_text(encoding="utf-8"))
     else:
         index = {"works": [{
             "work_id": work["work_id"],
             "title": work.get("title", work["work_id"]),
-            "path": f"works/{work['work_id']}.json",
+            "path": f"library/{work['work_id']}/work.json",
         }]}
     css, js = _load_assets(root)
     # 转义 "</" 避免序列意外闭合 script 标签
@@ -173,10 +179,17 @@ def reader_filename(work: dict) -> str:
     return f"{name}.html"
 
 
+def reader_path(work: dict) -> Path:
+    """阅读器输出位置：library/<work_id>/<书名>.html
+
+    书连同它的阅读器一起待在自己的目录里——拷走一个目录就带走一整本书。
+    """
+    return cfg.work_dir(work["work_id"]) / reader_filename(work)
+
+
 def write_reader(root: Path, work: dict) -> Path:
-    path = root / reader_filename(work)
+    """root 是框架根（用来读 assets/ 与书库索引）；输出落在该书自己的目录。"""
+    path = reader_path(work)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(build_reader_html(root, work), encoding="utf-8", newline="\n")
-    legacy = root / "reader.html"
-    if legacy != path:               # 清理旧入口，避免"打开的不是最新文件"
-        legacy.unlink(missing_ok=True)
     return path

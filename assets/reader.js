@@ -27,7 +27,7 @@ function sessionKey(){ const p=primaryWorkId(); return p ? 'reader.work.'+p : 'r
 async function loadJson(path){
   if(path==='works/index.json'){ const d=embeddedIndex(); if(d) return d; }
   const works=embeddedWorks();
-  if(works){ const hit=Object.values(works).find(w=>'works/'+w.work_id+'.json'===path); if(hit) return hit; }
+  if(works){ const hit=Object.values(works).find(w=>'library/'+w.work_id+'/work.json'===path); if(hit) return hit; }
   try{
     const res=await fetch(path);
     if(!res.ok) throw new Error(res.status);

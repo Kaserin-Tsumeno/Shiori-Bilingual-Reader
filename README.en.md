@@ -22,18 +22,46 @@ Only the translation step talks to a language model. Everything else runs locall
 
 ---
 
-## Make a book in three steps
-
-### 1. Drop the manuscript into `sources/`
+## Layout: framework / library
 
 ```
-sources/your-book.txt          ← UTF-8, paragraphs separated by blank lines
+shiori/
+├─ tools/  assets/  docs/  README*.md     ← framework: tracked, safe to push
+└─ library/                               ← the library: git-ignored, never pushed
+   ├─ index.json
+   └─ <book>/
+      ├─ source.txt        the manuscript
+      ├─ glossary.json     term list (keeps names consistent book-wide)
+      ├─ work.json         paragraphs + chapters + translation + furigana
+      ├─ chunks/ units/ chunks_600/
+      ├─ parts/ output/ cache/ logs/
+      └─ <book>.html       the finished book — double-click to read
+```
+
+**One book = one directory.** Everything belonging to a novel lives under
+`library/<book>/`, and that whole tree is excluded by `.gitignore` — it will never be
+committed or pushed. Backing up or moving a book means copying a single folder.
+
+Point the library somewhere else (another drive, a synced folder) with:
+
+```powershell
+$env:SHIORI_LIBRARY = "E:\my-library"
+```
+
+---
+
+## Make a book in three steps
+
+### 1. Drop the manuscript into `library/<book>/`
+
+```
+library/your-book/source.txt     ← UTF-8, paragraphs separated by blank lines
 ```
 
 Chapters are detected automatically: lines starting with 「第N話」 become chapter headings.
 
 **Optional but recommended** — list the main character and place names in
-`config/your-book/glossary.json`:
+`library/your-book/glossary.json`:
 
 ```json
 {
@@ -50,11 +78,11 @@ translated two different ways in two different chapters.
 
 ```powershell
 # 1) build the work (split paragraphs, detect chapters, create the reader skeleton)
-py -3.11 tools\init_work.py --source sources\your-book.txt --work-id your-book --title "English title"
+py -3.11 tools\init_work.py --work-id your-book --title "English title"
 
 # 2) chunk it
-py -3.11 tools\make_chunks.py --work-id your-book --start-id p00001 --chunk-size 100 --out-subdir chunks_units --prefix unit
-py -3.11 tools\make_chunks.py --work-id your-book --start-id p00001 --chunk-size 600 --out-subdir chunks_600 --prefix chunk_600
+py -3.11 tools\make_chunks.py --work-id your-book --target units
+py -3.11 tools\make_chunks.py --work-id your-book --target chunks_600
 
 # 3) translate + annotate  (Ctrl+C any time — rerunning resumes where it stopped)
 py -3.11 tools\api_pipeline.py --work-id your-book --concurrency 12
@@ -70,13 +98,13 @@ py -3.11 tools\merge_llm_outputs.py --work-id your-book
 
 ### 3. Read it
 
-Open **`<your-book>.html`** in the project root. That's it.
+Open **`library/<book>/<book>.html`**. That's it.
 
 Prefer a friendlier filename? Pass `--reader-name` in step 1:
 
 ```powershell
-py -3.11 tools\init_work.py ... --reader-name "my-novel-Bilingual"
-# → produces  my-novel-Bilingual.html
+py -3.11 tools\init_work.py --work-id your-book --title "T" --reader-name "my-novel-Bilingual"
+# → produces  library/your-book/my-novel-Bilingual.html
 ```
 
 ---
@@ -121,9 +149,10 @@ so re-translating the whole book with a better model will not wipe them.
 | "No API key found" | Set `DEEPSEEK_API_KEY`, or write `{api_key: sk-...}` to `config/credentials.yaml` |
 | "No work units found" | `make_chunks` (step 2) was not run, or `--work-id` differs |
 | Blank page | `Ctrl+F5`; if still blank, check the console (F12) |
+| "Source not found" | The manuscript goes in `library/<book>/source.txt`, or pass `--source` |
 | Some units incomplete | `unit_progress.py --list-pending`, then rerun those with `--units` |
 | Furigana coverage below 100% | Run `patch_missing_ruby.py` |
-| Inconsistent name translations | Add them to `config/<book>/glossary.json` and regenerate |
+| Inconsistent name translations | Add them to `library/<book>/glossary.json` and regenerate |
 
 ---
 

@@ -66,9 +66,9 @@ def main() -> None:
     args = parser.parse_args()
 
     work_id = cfg.resolve_work_id(args.work_id)
-    trans_dir = cfg.trans_dir(work_id)
-    parts_dir = trans_dir / "parts"
-    chunks_dir = cfg.chunks_600_dir(work_id)
+    trans_dir = cfg.output_dir(work_id)      # 成品译文输出
+    parts_dir = cfg.parts_dir(work_id)       # 生产中间产物（单元）
+    chunks_dir = cfg.chunks_600_dir(work_id)  # 分块边界
     trans_dir.mkdir(parents=True, exist_ok=True)
 
     # 分块边界

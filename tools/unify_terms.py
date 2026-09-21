@@ -31,7 +31,7 @@ def main() -> None:
 
     work_id = cfg.resolve_work_id(args.work_id)
     RULES = cfg.unify_rules(work_id)
-    trans_dir = cfg.trans_dir(work_id)
+    trans_dir = cfg.output_dir(work_id)
     files = sorted(trans_dir.glob("chunk_600_*.zh_ruby.jsonl"))
     hits: list[tuple[str, str, str]] = []
     changed_rows = 0

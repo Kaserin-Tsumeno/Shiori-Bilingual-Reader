@@ -9,6 +9,7 @@ from datetime import date
 from pathlib import Path
 
 import reader_builder
+import shiori_config as cfg
 
 
 KANJI_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]+")
@@ -147,28 +148,39 @@ def write_reader(root: Path, work: dict) -> None:
 
 
 def update_index(root: Path, work: dict) -> None:
-    works_dir = root / "works"
-    works_dir.mkdir(parents=True, exist_ok=True)
-    index_path = works_dir / "index.json"
+    """写入作品数据与书库索引。
+
+    两者都落在 library/ 下（被 .gitignore 整体排除，永不 push）：
+      library/<work_id>/work.json   作品数据
+      library/index.json            书库索引
+    """
+    work_id = work["work_id"]
+    cfg.ensure_work_dirs(work_id)
+    cfg.work_file(work_id).write_text(
+        json.dumps(work, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    index_path = cfg.index_file()
     if index_path.exists():
-        index = json.loads(index_path.read_text(encoding="utf-8"))
+        try:
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+        except Exception:
+            index = {"works": []}
     else:
         index = {"works": []}
     entry = {
-        "work_id": work["work_id"],
+        "work_id": work_id,
         "title": work["title"],
-        "path": f"works/{work['work_id']}.json",
+        "path": f"library/{work_id}/work.json",
         "chapter_count": work["stats"]["chapter_count"],
         "paragraph_count": work["stats"]["paragraph_count"],
         "translated_count": work["stats"]["translated_count"],
         "updated_at": work["updated_at"],
     }
-    index["works"] = [item for item in index.get("works", []) if item.get("work_id") != work["work_id"]]
+    index["works"] = [item for item in index.get("works", []) if item.get("work_id") != work_id]
     index["works"].append(entry)
+    index_path.parent.mkdir(parents=True, exist_ok=True)
     index_path.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
-    (works_dir / f"{work['work_id']}.json").write_text(
-        json.dumps(work, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
 
 
 PROMPT_SCHEMA = """# 栞 Shiori 生产 Prompt Schema
@@ -265,39 +277,39 @@ def validate(work: dict, root: Path) -> dict:
         "duplicate_ids": duplicates,
         "chapter_count": work["stats"]["chapter_count"],
         "ruby_enabled": any("<ruby>" in item["ja_ruby_html"] for item in work["paragraphs"]),
-        "reader_html_exists": (root / reader_builder.reader_filename(work)).exists(),
-        "index_updated": (root / "works" / "index.json").exists(),
+        "reader_html_exists": reader_builder.reader_path(work).exists(),
+        "index_updated": cfg.index_file().exists(),
     }
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--source", type=Path, required=True)
-    parser.add_argument("--root", type=Path, default=None, help="工作根目录，默认取 SHIORI_ROOT 或本仓库根目录")
-    parser.add_argument("--work-id", required=True)
-    parser.add_argument("--title", required=True)
-    parser.add_argument("--chunk-size", type=int, default=80)
-    parser.add_argument("--reader-name", default=None, help="阅读器文件名（不含 .html），如 my-novel-双语；默认用 work_id")
+    parser = argparse.ArgumentParser(description="栞 · 初始化作品（原稿 → 分段/章节/阅读器骨架）")
+    parser.add_argument("--work-id", required=True, help="作品 id（英文/拼音短名）")
+    parser.add_argument("--title", required=True, help="中文标题")
+    parser.add_argument("--source", type=Path, default=None,
+                        help="原始日文原稿；默认 library/<work-id>/source.txt")
+    parser.add_argument("--chunk-size", type=int, default=80, help="chunks/ 的分块大小")
+    parser.add_argument("--reader-name", default=None,
+                        help="阅读器文件名（不含 .html），如 my-novel-双语；默认用 work_id")
     args = parser.parse_args()
-    if args.root is None:
-        args.root = Path(__file__).resolve().parent.parent
 
-    old_translation_dir = args.root / "translations"
-    nested_translation_dir = args.root / "translations" / args.work_id
-    if old_translation_dir.exists() and not nested_translation_dir.exists():
-        old_files = sorted(old_translation_dir.glob("*.jsonl"))
-        if old_files:
-            nested_translation_dir.mkdir(parents=True, exist_ok=True)
-            for file in old_files:
-                shutil.copy2(file, nested_translation_dir / file.name)
+    work_id = args.work_id
+    cfg.ensure_work_dirs(work_id)
 
-    work = build_work(args.work_id, args.title, args.source, nested_translation_dir)
+    source = args.source or cfg.source_file(work_id)
+    if not source.exists():
+        raise SystemExit(
+            f"找不到原稿：{source}\n"
+            f"请把原稿保存为 library/{work_id}/source.txt，或用 --source 指定路径。"
+        )
+
+    work = build_work(work_id, args.title, source, cfg.output_dir(work_id))
     if args.reader_name:
         work["reader_name"] = args.reader_name
-    write_reader(args.root, work)
-    update_index(args.root, work)
-    write_chunks(work, args.root / "chunks" / args.work_id, args.chunk_size)
-    print(json.dumps(validate(work, args.root), ensure_ascii=False, indent=2))
+    write_reader(cfg.root(), work)
+    update_index(cfg.root(), work)
+    write_chunks(work, cfg.chunks_dir(work_id), args.chunk_size)
+    print(json.dumps(validate(work, cfg.root()), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
