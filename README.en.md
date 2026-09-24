@@ -118,6 +118,8 @@ py -3.11 tools\init_work.py --work-id your-book --title "T" --reader-name "my-no
 | Resize text | **A-** / **A+** |
 | Night mode | Click **暗** (cycles themes) |
 | Jump to a chapter | Click a title in the left sidebar, use the dropdown, or **上一章 / 下一章** |
+| Resize the sidebar | Drag its right edge; double-click the edge to reset; focus it and press **←** / **→** (**Shift** for bigger steps) |
+| Hide the sidebar | Click **☰** in the toolbar, or press **[** (press again to bring it back; its width is remembered) |
 | Search | Type Japanese or Chinese in the search box, press Enter |
 | Bookmark a paragraph | Hover it, click **☆** in the corner (becomes ★) |
 | See bookmarks | The **书签** tab in the left sidebar |
